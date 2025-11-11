@@ -2,7 +2,7 @@ import 'react-native-url-polyfill/auto'
 
 import { Session } from '@supabase/supabase-js'
 import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     ActivityIndicator,
     FlatList,
@@ -94,6 +94,18 @@ export default function Index() {
 
   const router = useRouter()
   const insets = useSafeAreaInsets()
+  const isMountedRef = useRef(true)
+  const dogsChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+      if (dogsChannelRef.current) {
+        supabase.removeChannel(dogsChannelRef.current)
+        dogsChannelRef.current = null
+      }
+    }
+  }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -103,52 +115,83 @@ export default function Index() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
+  const fetchDogs = useCallback(async () => {
+    if (!isMountedRef.current) {
+      return
+    }
+
+    const userId = session?.user.id
+    if (!userId) {
+      setDogs([])
+      return
+    }
+
+    setDogsLoading(true)
+    setDogsError(null)
+
+    const { data, error } = await supabase
+      .from('doghealthy_dogs')
+      .select('id, name, breed, birth_date')
+      .eq('user_id', userId)
+      .order('name', { ascending: true })
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (error) {
+      setDogsError(error.message)
+      setDogs([])
+    } else {
+      setDogs(data ?? [])
+    }
+
+    setDogsLoading(false)
+  }, [session?.user.id])
+
   useEffect(() => {
     if (!session) {
       setDogs([])
       setIsMenuVisible(false)
+      if (dogsChannelRef.current) {
+        supabase.removeChannel(dogsChannelRef.current)
+        dogsChannelRef.current = null
+      }
       return
-    }
-
-    let isMounted = true
-
-    async function fetchDogs() {
-      setDogsLoading(true)
-      setDogsError(null)
-
-      const userId = session?.user.id
-      if (!userId) {
-        setDogs([])
-        setDogsLoading(false)
-        return
-      }
-
-      const { data, error } = await supabase
-        .from('doghealthy_dogs')
-        .select('id, name, breed, birth_date')
-        .eq('user_id', userId)
-        .order('name', { ascending: true })
-
-      if (!isMounted) {
-        return
-      }
-
-      if (error) {
-        setDogsError(error.message)
-        setDogs([])
-      } else {
-        setDogs(data ?? [])
-      }
-
-      setDogsLoading(false)
     }
 
     fetchDogs()
 
-    return () => {
-      isMounted = false
+    if (dogsChannelRef.current) {
+      supabase.removeChannel(dogsChannelRef.current)
+      dogsChannelRef.current = null
     }
-  }, [session])
+
+    const channel = supabase
+      .channel('doghealthy-dogs-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'doghealthy_dogs',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => {
+          fetchDogs()
+        },
+      )
+      .subscribe()
+
+    dogsChannelRef.current = channel
+
+    return () => {
+      if (dogsChannelRef.current) {
+        supabase.removeChannel(dogsChannelRef.current)
+        dogsChannelRef.current = null
+      }
+    }
+  }, [session, fetchDogs])
 
   const menuItems = useMemo(() => (session ? LOGGED_IN_MENU : LOGGED_OUT_MENU), [session])
 

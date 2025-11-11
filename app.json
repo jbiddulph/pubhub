@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "DogHealthy",
-    "slug": "doghealthy",
+    "slug": "dog-healthy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -51,7 +51,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "be0c5d54-3287-44c7-89a0-613a4195456c"
+        "projectId": "8f7f0bf5-6d0e-4b21-99b4-f33aa9cc3c31"
       }
     },
     "owner": "jarv81178"

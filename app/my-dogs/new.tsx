@@ -1,7 +1,10 @@
+import { Image } from 'expo-image'
+import * as ImagePicker from 'expo-image-picker'
 import { useRouter } from 'expo-router'
 import { useState } from 'react'
 import { Alert, ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native'
 
+import { uploadDogPhoto } from '@/lib/storage'
 import { supabase } from '@/lib/supabase'
 
 type DogForm = {
@@ -30,6 +33,36 @@ export default function NewDogScreen() {
   const router = useRouter()
   const [form, setForm] = useState<DogForm>(INITIAL_FORM)
   const [saving, setSaving] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [photoUri, setPhotoUri] = useState<string | null>(null)
+
+  async function requestImagePermissions() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to upload a picture of your dog.')
+      return false
+    }
+    return true
+  }
+
+  async function handlePickPhoto() {
+    const granted = await requestImagePermissions()
+    if (!granted) return
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    })
+
+    if (result.canceled || !result.assets?.length) {
+      return
+    }
+
+    const asset = result.assets[0]
+    setPhotoUri(asset.uri)
+    setPhotoPreview(asset.uri)
+  }
 
   function updateField<Key extends keyof DogForm>(key: Key, value: DogForm[Key]) {
     setForm((prev) => ({
@@ -50,6 +83,18 @@ export default function NewDogScreen() {
       return
     }
 
+    let photoPath: string | null = null
+
+    if (photoUri) {
+      const upload = await uploadDogPhoto(session.user.id, photoUri)
+      if (upload.error) {
+        Alert.alert('Photo upload failed', 'Please try choosing a different image.')
+        setSaving(false)
+        return
+      }
+      photoPath = upload.data?.path ?? null
+    }
+
     const { data, error } = await supabase
       .from('doghealthy_dogs')
       .insert({
@@ -62,6 +107,7 @@ export default function NewDogScreen() {
         color: form.color || null,
         microchip_number: form.microchip_number || null,
         notes: form.notes || null,
+        photo_url: photoPath,
       })
       .select('id')
       .maybeSingle()
@@ -157,6 +203,16 @@ export default function NewDogScreen() {
       </View>
 
       <View style={styles.field}>
+        <Text style={styles.label}>Photo</Text>
+        <Pressable style={styles.photoButton} onPress={handlePickPhoto}>
+          <Text style={styles.photoButtonLabel}>{photoPreview ? 'Change Photo' : 'Select Photo'}</Text>
+        </Pressable>
+        {photoPreview ? (
+          <Image source={photoPreview} style={styles.photo} contentFit="cover" />
+        ) : null}
+      </View>
+
+      <View style={styles.field}>
         <Text style={styles.label}>Care Notes</Text>
         <TextInput
           style={[styles.input, styles.multiline]}
@@ -206,6 +262,23 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#1B4332',
+  },
+  photoButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2C6E49',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  photoButtonLabel: {
+    color: '#2C6E49',
+    fontWeight: '600',
+  },
+  photo: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#E0E5EC',
   },
   multiline: {
     minHeight: 120,

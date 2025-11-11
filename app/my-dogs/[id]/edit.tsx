@@ -1,7 +1,10 @@
+import { Image } from 'expo-image'
+import * as ImagePicker from 'expo-image-picker'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 
+import { getPublicDogPhotoUrl, uploadDogPhoto } from '@/lib/storage'
 import { supabase } from '@/lib/supabase'
 
 type Dog = {
@@ -13,6 +16,7 @@ type Dog = {
   color?: string | null
   microchip_number?: string | null
   notes?: string | null
+  photo_url?: string | null
 }
 
 export default function EditDogScreen() {
@@ -21,6 +25,9 @@ export default function EditDogScreen() {
   const [dog, setDog] = useState<Dog | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [newPhotoUri, setNewPhotoUri] = useState<string | null>(null)
+  const [existingPhotoPath, setExistingPhotoPath] = useState<string | null>(null)
 
   useEffect(() => {
     if (!id) {
@@ -31,7 +38,9 @@ export default function EditDogScreen() {
     async function loadDog() {
       const { data, error } = await supabase
         .from('doghealthy_dogs')
-        .select('name, breed, gender, birth_date, weight_kg, color, microchip_number, notes')
+        .select(
+          'name, breed, gender, birth_date, weight_kg, color, microchip_number, notes, photo_url'
+        )
         .eq('id', id)
         .maybeSingle()
 
@@ -39,6 +48,9 @@ export default function EditDogScreen() {
         Alert.alert('Error loading dog', error.message)
       } else {
         setDog(data ?? {})
+        const photoPath = data?.photo_url ?? null
+        setExistingPhotoPath(photoPath)
+        setPhotoPreview(getPublicDogPhotoUrl(photoPath))
       }
       setLoading(false)
     }
@@ -46,11 +58,66 @@ export default function EditDogScreen() {
     loadDog()
   }, [id])
 
+  async function requestMediaPermissions() {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync()
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Allow photo access to update your dog image.')
+      return false
+    }
+    return true
+  }
+
+  async function handlePickPhoto() {
+    const granted = await requestMediaPermissions()
+    if (!granted) return
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    })
+
+    if (result.canceled || !result.assets?.length) {
+      return
+    }
+
+    const asset = result.assets[0]
+    setNewPhotoUri(asset.uri)
+    setPhotoPreview(asset.uri)
+  }
+
   async function handleSave() {
     if (!id || !dog) {
       return
     }
     setSaving(true)
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session) {
+      setSaving(false)
+      Alert.alert('Session expired', 'Please sign in again to update your dog.')
+      return
+    }
+
+    let photoPath = existingPhotoPath ?? null
+
+    if (newPhotoUri) {
+      const upload = await uploadDogPhoto(session.user.id, newPhotoUri, {
+        previousPath: existingPhotoPath,
+      })
+
+      if (upload.error) {
+        setSaving(false)
+        Alert.alert('Photo upload failed', 'Unable to update the photo. Please try again.')
+        return
+      }
+
+      photoPath = upload.data?.path ?? photoPath
+    }
+
     const payload = {
       name: dog.name ?? null,
       breed: dog.breed ?? null,
@@ -60,6 +127,7 @@ export default function EditDogScreen() {
       color: dog.color ?? null,
       microchip_number: dog.microchip_number ?? null,
       notes: dog.notes ?? null,
+      photo_url: photoPath,
     }
 
     const { error } = await supabase.from('doghealthy_dogs').update(payload).eq('id', id)
@@ -70,6 +138,12 @@ export default function EditDogScreen() {
       Alert.alert('Update failed', error.message)
       return
     }
+
+    setExistingPhotoPath(photoPath)
+    if (!photoPath) {
+      setPhotoPreview(null)
+    }
+    setNewPhotoUri(null)
 
     Alert.alert('Dog updated', 'Details saved successfully.', [
       { text: 'View details', onPress: () => router.replace(`/my-dogs/${id}` as any) },
@@ -103,6 +177,19 @@ export default function EditDogScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Edit Dog</Text>
+      <View style={styles.field}>
+        <Text style={styles.label}>Photo</Text>
+        <Pressable style={styles.photoButton} onPress={handlePickPhoto}>
+          <Text style={styles.photoButtonLabel}>{photoPreview ? 'Change Photo' : 'Select Photo'}</Text>
+        </Pressable>
+        {photoPreview ? (
+          <Image source={photoPreview} style={styles.photo} contentFit="cover" />
+        ) : (
+          <View style={[styles.photo, styles.photoPlaceholder]}>
+            <Text style={styles.photoPlaceholderText}>No photo selected</Text>
+          </View>
+        )}
+      </View>
       <View style={styles.field}>
         <Text style={styles.label}>Name</Text>
         <TextInput
@@ -220,6 +307,33 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#1B4332',
+  },
+  photoButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2C6E49',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  photoButtonLabel: {
+    color: '#2C6E49',
+    fontWeight: '600',
+  },
+  photo: {
+    width: '100%',
+    height: 220,
+    borderRadius: 16,
+    backgroundColor: '#E0E5EC',
+  },
+  photoPlaceholder: {
+    borderWidth: 1,
+    borderColor: '#CCE3DE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPlaceholderText: {
+    color: '#6B9080',
+    fontSize: 14,
   },
   multiline: {
     minHeight: 120,

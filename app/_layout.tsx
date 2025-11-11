@@ -17,13 +17,34 @@ export default function RootLayout() {
           headerTitleStyle: { fontWeight: '600' },
         }}>
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="food-finder" options={{ title: 'Food Finder', headerShown: true }} />
-        <Stack.Screen name="classifieds" options={{ title: 'Classifieds', headerShown: true }} />
-        <Stack.Screen name="members" options={{ title: 'Members', headerShown: true }} />
-        <Stack.Screen name="my-dogs/index" options={{ title: 'My Dogs', headerShown: true }} />
-        <Stack.Screen name="my-dogs/new" options={{ title: 'Add Dog', headerShown: true }} />
-        <Stack.Screen name="my-dogs/[id]" options={{ title: 'Dog Details', headerShown: true }} />
-        <Stack.Screen name="my-dogs/[id]/edit" options={{ title: 'Edit Dog', headerShown: true }} />
+        <Stack.Screen
+          name="food-finder"
+          options={{ title: 'Food Finder', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="classifieds"
+          options={{ title: 'Classifieds', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="members"
+          options={{ title: 'Members', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="my-dogs/index"
+          options={{ title: 'My Dogs', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="my-dogs/new"
+          options={{ title: 'Add Dog', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="my-dogs/[id]"
+          options={{ title: 'Dog Details', headerShown: true, headerBackTitle: 'Home' }}
+        />
+        <Stack.Screen
+          name="my-dogs/[id]/edit"
+          options={{ title: 'Edit Dog', headerShown: true, headerBackTitle: 'Home' }}
+        />
         <Stack.Screen
           name="modal"
           options={{ presentation: 'modal', title: 'Modal', headerShown: true }}
