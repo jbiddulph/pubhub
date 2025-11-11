@@ -1353,7 +1353,7 @@ export default function DogDetailsScreen() {
               placeholder="Measurement date (YYYY-MM-DD)"
             />
             <TextInput
-              style={[styles.modalInput, styles.modalMultiline]]
+              style={[styles.modalInput, styles.modalMultiline]}
               value={weightForm.notes}
               onChangeText={(text) => setWeightForm((prev) => ({ ...prev, notes: text }))}
               placeholder="Notes"
