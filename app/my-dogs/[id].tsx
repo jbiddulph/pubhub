@@ -1,6 +1,6 @@
 import { Image } from 'expo-image'
-import { useLocalSearchParams } from 'expo-router'
-import { ReactNode, useCallback, useEffect, useState } from 'react'
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { ReactNode, useCallback, useMemo, useState } from 'react'
 import {
   Alert,
   ActivityIndicator,
@@ -15,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { getPublicDogPhotoUrl } from '@/lib/storage'
 import { supabase } from '@/lib/supabase'
@@ -45,6 +46,7 @@ type HealthRecord = {
   clinic_name?: string | null
   cost?: number | string | null
   notes?: string | null
+  vet_id?: string | null
 }
 
 type Vaccination = {
@@ -57,6 +59,7 @@ type Vaccination = {
   clinic_name?: string | null
   notes?: string | null
   cost?: number | string | null
+  vet_id?: string | null
 }
 
 type Medication = {
@@ -72,6 +75,7 @@ type Medication = {
   instructions?: string | null
   notes?: string | null
   is_active?: boolean | null
+  vet_id?: string | null
 }
 
 type Appointment = {
@@ -86,6 +90,7 @@ type Appointment = {
   clinic_phone?: string | null
   status?: string | null
   notes?: string | null
+  vet_id?: string | null
 }
 
 type WeightLog = {
@@ -93,6 +98,7 @@ type WeightLog = {
   weight_kg: number | string
   measurement_date?: string | null
   notes?: string | null
+  vet_id?: string | null
 }
 
 type DogOwner = {
@@ -101,6 +107,14 @@ type DogOwner = {
   full_name?: string | null
   phone?: string | null
   avatar_url?: string | null
+}
+
+type Vet = {
+  id: string
+  name?: string | null
+  clinic_name?: string | null
+  phone?: string | null
+  email?: string | null
 }
 
 function computeDogAgeLabel(birthDate?: string | null) {
@@ -181,6 +195,7 @@ type HealthFormState = {
   clinic_name: string
   cost: string
   notes: string
+  vet_id: string | null
 }
 
 type VaccinationFormState = {
@@ -192,6 +207,7 @@ type VaccinationFormState = {
   clinic_name: string
   cost: string
   notes: string
+  vet_id: string | null
 }
 
 type MedicationFormState = {
@@ -206,6 +222,7 @@ type MedicationFormState = {
   instructions: string
   notes: string
   is_active: boolean
+  vet_id: string | null
 }
 
 type AppointmentFormState = {
@@ -219,12 +236,14 @@ type AppointmentFormState = {
   clinic_phone: string
   status: string
   notes: string
+  vet_id: string | null
 }
 
 type WeightFormState = {
   measurement_date: string
   weight_kg: string
   notes: string
+  vet_id: string | null
 }
 
 const INITIAL_HEALTH_FORM: HealthFormState = {
@@ -238,6 +257,7 @@ const INITIAL_HEALTH_FORM: HealthFormState = {
   clinic_name: '',
   cost: '',
   notes: '',
+  vet_id: null,
 }
 
 const INITIAL_VACCINATION_FORM: VaccinationFormState = {
@@ -249,6 +269,7 @@ const INITIAL_VACCINATION_FORM: VaccinationFormState = {
   clinic_name: '',
   cost: '',
   notes: '',
+  vet_id: null,
 }
 
 const INITIAL_MEDICATION_FORM: MedicationFormState = {
@@ -263,6 +284,7 @@ const INITIAL_MEDICATION_FORM: MedicationFormState = {
   instructions: '',
   notes: '',
   is_active: true,
+  vet_id: null,
 }
 
 const INITIAL_APPOINTMENT_FORM: AppointmentFormState = {
@@ -276,62 +298,20 @@ const INITIAL_APPOINTMENT_FORM: AppointmentFormState = {
   clinic_phone: '',
   status: '',
   notes: '',
+  vet_id: null,
 }
 
 const INITIAL_WEIGHT_FORM: WeightFormState = {
   measurement_date: '',
   weight_kg: '',
   notes: '',
-}
-
-type SectionAccordionProps = {
-  title: string
-  expanded: boolean
-  onToggle: () => void
-  onAdd: () => void
-  children: ReactNode
-  error?: string | null
-  emptyMessage?: string
-  isEmpty: boolean
-}
-
-function SectionAccordion({
-  title,
-  expanded,
-  onToggle,
-  onAdd,
-  children,
-  error,
-  emptyMessage,
-  isEmpty,
-}: SectionAccordionProps) {
-  return (
-    <View style={styles.section}>
-      <View style={styles.sectionHeader}>
-        <Pressable style={styles.sectionHeaderMain} onPress={onToggle}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          <Text style={styles.sectionChevron}>{expanded ? '−' : '+'}</Text>
-        </Pressable>
-        <Pressable style={styles.addButton} onPress={onAdd}>
-          <Text style={styles.addButtonLabel}>+ Add</Text>
-        </Pressable>
-      </View>
-
-      {expanded ? (
-        <>
-          {error ? <Text style={styles.sectionError}>{error}</Text> : null}
-          {!error && isEmpty && emptyMessage ? (
-            <Text style={styles.sectionEmpty}>{emptyMessage}</Text>
-          ) : null}
-          {!error && !isEmpty ? children : null}
-        </>
-      ) : null}
-    </View>
-  )
+  vet_id: null,
 }
 
 export default function DogDetailsScreen() {
+  const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
+  const insets = useSafeAreaInsets()
   const [dog, setDog] = useState<Dog | null>(null)
   const [owner, setOwner] = useState<DogOwner | null>(null)
   const [healthRecords, setHealthRecords] = useState<HealthRecord[]>([])
@@ -347,7 +327,9 @@ export default function DogDetailsScreen() {
   const [appointmentError, setAppointmentError] = useState<string | null>(null)
   const [weightError, setWeightError] = useState<string | null>(null)
   const [ownerError, setOwnerError] = useState<string | null>(null)
-  const [expandedSection, setExpandedSection] = useState<SectionKey | null>('health')
+  const [vets, setVets] = useState<Vet[]>([])
+  const [vetError, setVetError] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<SectionKey>('health')
 
   const [showHealthModal, setShowHealthModal] = useState(false)
   const [healthForm, setHealthForm] = useState<HealthFormState>(INITIAL_HEALTH_FORM)
@@ -368,6 +350,253 @@ export default function DogDetailsScreen() {
   const [showWeightModal, setShowWeightModal] = useState(false)
   const [weightForm, setWeightForm] = useState<WeightFormState>(INITIAL_WEIGHT_FORM)
   const [savingWeight, setSavingWeight] = useState(false)
+  const [vetPickerFor, setVetPickerFor] = useState<SectionKey | null>(null)
+
+  const vetLookup = useMemo(() => {
+    return vets.reduce<Record<string, Vet>>((acc, vet) => {
+      if (vet.id) {
+        acc[vet.id] = vet
+      }
+      return acc
+    }, {})
+  }, [vets])
+
+  const selectedHealthVet = healthForm.vet_id ? vetLookup[healthForm.vet_id] : null
+  const selectedVaccinationVet = vaccinationForm.vet_id ? vetLookup[vaccinationForm.vet_id] : null
+  const selectedMedicationVet = medicationForm.vet_id ? vetLookup[medicationForm.vet_id] : null
+  const selectedAppointmentVet = appointmentForm.vet_id ? vetLookup[appointmentForm.vet_id] : null
+  const selectedWeightVet = weightForm.vet_id ? vetLookup[weightForm.vet_id] : null
+  const modalHeaderStyle = useMemo(
+    () => [styles.modalHeader, { paddingTop: insets.top + 12 }],
+    [insets.top],
+  )
+  const pickerContainerStyle = useMemo(
+    () => [styles.pickerContainer, { paddingBottom: 24 + insets.bottom }],
+    [insets.bottom],
+  )
+  const tabItems: Array<{ key: SectionKey; label: string; onAdd: () => void }> = [
+    { key: 'health', label: 'Health Records', onAdd: openHealthModal },
+    { key: 'vaccinations', label: 'Vaccinations', onAdd: openVaccinationModal },
+    { key: 'medications', label: 'Medications', onAdd: openMedicationModal },
+    { key: 'appointments', label: 'Appointments', onAdd: openAppointmentModal },
+    { key: 'weight', label: 'Weight Logs', onAdd: openWeightModal },
+  ]
+  const activeTabConfig =
+    tabItems.find((tab) => tab.key === activeTab) ?? tabItems[0]
+
+  let tabError: string | null = null
+  let tabEmptyMessage = ''
+  let isTabEmpty = false
+  let tabContent: ReactNode = null
+
+  switch (activeTab) {
+    case 'health': {
+      tabError = healthError
+      tabEmptyMessage = 'No health records yet.'
+      isTabEmpty = healthRecords.length === 0
+      if (!healthError && !isTabEmpty) {
+        tabContent = healthRecords.map((record) => {
+          const vet = record.vet_id ? vetLookup[record.vet_id] : undefined
+          return (
+            <View key={record.id} style={styles.card}>
+              <Text style={styles.cardTitle}>{record.title ?? 'Health record'}</Text>
+              <Text style={styles.cardMeta}>
+                {formatDate(record.record_date) ?? 'Date unknown'} · {record.record_type ?? 'General'}
+              </Text>
+              {vet ? (
+                <Text style={styles.cardMeta}>
+                  Vet: {vet.name ?? 'Veterinarian'}
+                  {vet.clinic_name ? ` • ${vet.clinic_name}` : ''}
+                </Text>
+              ) : null}
+              {record.clinic_name || record.veterinarian_name ? (
+                <Text style={styles.cardMeta}>
+                  {record.clinic_name ?? 'Clinic'} • {record.veterinarian_name ?? 'Vet'}
+                </Text>
+              ) : null}
+              {record.diagnosis ? (
+                <Text style={styles.cardMeta}>Diagnosis: {record.diagnosis}</Text>
+              ) : null}
+              {record.treatment ? (
+                <Text style={styles.cardMeta}>Treatment: {record.treatment}</Text>
+              ) : null}
+              {formatCurrency(record.cost) ? (
+                <Text style={styles.cardMeta}>Cost: {formatCurrency(record.cost)}</Text>
+              ) : null}
+              {record.description ? (
+                <Text style={styles.cardNotes}>{record.description}</Text>
+              ) : null}
+              {record.notes ? <Text style={styles.cardNotes}>{record.notes}</Text> : null}
+            </View>
+          )
+        })
+      }
+      break
+    }
+    case 'vaccinations': {
+      tabError = vaccinationError
+      tabEmptyMessage = 'No vaccination history yet.'
+      isTabEmpty = vaccinations.length === 0
+      if (!vaccinationError && !isTabEmpty) {
+        tabContent = vaccinations.map((vaccination) => {
+          const vet = vaccination.vet_id ? vetLookup[vaccination.vet_id] : undefined
+          return (
+            <View key={vaccination.id} style={styles.card}>
+              <Text style={styles.cardTitle}>{vaccination.vaccine_name ?? 'Vaccination'}</Text>
+              <Text style={styles.cardMeta}>
+                {formatDate(vaccination.vaccination_date) ?? 'Date unknown'}
+                {vaccination.vaccine_type ? ` • ${vaccination.vaccine_type}` : ''}
+              </Text>
+              {vet ? (
+                <Text style={styles.cardMeta}>
+                  Vet: {vet.name ?? 'Veterinarian'}
+                  {vet.clinic_name ? ` • ${vet.clinic_name}` : ''}
+                </Text>
+              ) : null}
+              {formatDate(vaccination.next_due_date) ? (
+                <Text style={styles.cardMeta}>
+                  Next due: {formatDate(vaccination.next_due_date)}
+                </Text>
+              ) : null}
+              {vaccination.clinic_name || vaccination.veterinarian_name ? (
+                <Text style={styles.cardMeta}>
+                  {vaccination.clinic_name ?? 'Clinic'} • {vaccination.veterinarian_name ?? 'Vet'}
+                </Text>
+              ) : null}
+              {formatCurrency(vaccination.cost) ? (
+                <Text style={styles.cardMeta}>Cost: {formatCurrency(vaccination.cost)}</Text>
+              ) : null}
+              {vaccination.notes ? (
+                <Text style={styles.cardNotes}>{vaccination.notes}</Text>
+              ) : null}
+            </View>
+          )
+        })
+      }
+      break
+    }
+    case 'medications': {
+      tabError = medicationError
+      tabEmptyMessage = 'No medications recorded.'
+      isTabEmpty = medications.length === 0
+      if (!medicationError && !isTabEmpty) {
+        tabContent = medications.map((medication) => {
+          const vet = medication.vet_id ? vetLookup[medication.vet_id] : undefined
+          return (
+            <View key={medication.id} style={styles.card}>
+              <Text style={styles.cardTitle}>{medication.medication_name ?? 'Medication'}</Text>
+              <Text style={styles.cardMeta}>
+                {medication.dosage ?? 'Dosage n/a'}
+                {medication.frequency ? ` • ${medication.frequency}` : ''}
+              </Text>
+              {vet ? (
+                <Text style={styles.cardMeta}>
+                  Vet: {vet.name ?? 'Veterinarian'}
+                  {vet.clinic_name ? ` • ${vet.clinic_name}` : ''}
+                </Text>
+              ) : null}
+              <Text style={styles.cardMeta}>
+                {formatDate(medication.start_date) ?? 'Start n/a'} –{' '}
+                {formatDate(medication.end_date) ?? 'Ongoing'}
+              </Text>
+              {medication.prescribed_by ? (
+                <Text style={styles.cardMeta}>Prescribed by {medication.prescribed_by}</Text>
+              ) : null}
+              {medication.purpose ? (
+                <Text style={styles.cardNotes}>Purpose: {medication.purpose}</Text>
+              ) : null}
+              {medication.side_effects ? (
+                <Text style={styles.cardNotes}>Side effects: {medication.side_effects}</Text>
+              ) : null}
+              {medication.instructions ? (
+                <Text style={styles.cardNotes}>Instructions: {medication.instructions}</Text>
+              ) : null}
+              {medication.notes ? <Text style={styles.cardNotes}>{medication.notes}</Text> : null}
+              {medication.is_active === false ? (
+                <Text style={styles.cardMeta}>Status: Completed</Text>
+              ) : null}
+            </View>
+          )
+        })
+      }
+      break
+    }
+    case 'appointments': {
+      tabError = appointmentError
+      tabEmptyMessage = 'No appointments scheduled.'
+      isTabEmpty = appointments.length === 0
+      if (!appointmentError && !isTabEmpty) {
+        tabContent = appointments.map((appointment) => {
+          const vet = appointment.vet_id ? vetLookup[appointment.vet_id] : undefined
+          return (
+            <View key={appointment.id} style={styles.card}>
+              <Text style={styles.cardTitle}>{appointment.title ?? 'Appointment'}</Text>
+              <Text style={styles.cardMeta}>
+                {formatDateTime(appointment.appointment_date) ?? 'Date/time n/a'}
+              </Text>
+              {vet ? (
+                <Text style={styles.cardMeta}>
+                  Vet: {vet.name ?? 'Veterinarian'}
+                  {vet.clinic_name ? ` • ${vet.clinic_name}` : ''}
+                </Text>
+              ) : null}
+              {appointment.appointment_type ? (
+                <Text style={styles.cardMeta}>Type: {appointment.appointment_type}</Text>
+              ) : null}
+              {appointment.location ? (
+                <Text style={styles.cardMeta}>Location: {appointment.location}</Text>
+              ) : null}
+              {appointment.clinic_name || appointment.veterinarian_name ? (
+                <Text style={styles.cardMeta}>
+                  {appointment.clinic_name ?? 'Clinic'} • {appointment.veterinarian_name ?? 'Vet'}
+                </Text>
+              ) : null}
+              {appointment.clinic_phone ? (
+                <Text style={styles.cardMeta}>Phone: {appointment.clinic_phone}</Text>
+              ) : null}
+              {appointment.status ? (
+                <Text style={styles.cardMeta}>Status: {appointment.status}</Text>
+              ) : null}
+              {appointment.description ? (
+                <Text style={styles.cardNotes}>{appointment.description}</Text>
+              ) : null}
+              {appointment.notes ? <Text style={styles.cardNotes}>{appointment.notes}</Text> : null}
+            </View>
+          )
+        })
+      }
+      break
+    }
+    case 'weight': {
+      tabError = weightError
+      tabEmptyMessage = 'No weight entries yet.'
+      isTabEmpty = weightLogs.length === 0
+      if (!weightError && !isTabEmpty) {
+        tabContent = weightLogs.map((log) => {
+          const weightValue = parseNumeric(log.weight_kg)
+          const vet = log.vet_id ? vetLookup[log.vet_id] : undefined
+          return (
+            <View key={log.id} style={styles.card}>
+              <Text style={styles.cardTitle}>
+                {formatDate(log.measurement_date) ?? 'Measurement date n/a'}
+              </Text>
+              <Text style={styles.cardMeta}>
+                Weight: {weightValue !== null ? `${weightValue} kg` : 'Unknown'}
+              </Text>
+              {vet ? (
+                <Text style={styles.cardMeta}>
+                  Vet: {vet.name ?? 'Veterinarian'}
+                  {vet.clinic_name ? ` • ${vet.clinic_name}` : ''}
+                </Text>
+              ) : null}
+              {log.notes ? <Text style={styles.cardNotes}>{log.notes}</Text> : null}
+            </View>
+          )
+        })
+      }
+      break
+    }
+  }
 
   const fetchData = useCallback(async () => {
     if (!id) {
@@ -385,6 +614,8 @@ export default function DogDetailsScreen() {
     setWeightError(null)
     setOwner(null)
     setOwnerError(null)
+    setVets([])
+    setVetError(null)
 
     const { data: dogData, error: dogFetchError } = await supabase
       .from('doghealthy_dogs')
@@ -414,6 +645,18 @@ export default function DogDetailsScreen() {
       } else {
         setOwner(ownerData)
       }
+
+      const { data: vetData, error: vetFetchError } = await supabase
+        .from('doghealthy_vets')
+        .select('id, name, clinic_name, phone, email')
+        .eq('user_id', dogData.user_id)
+        .order('name', { ascending: true })
+
+      if (vetFetchError) {
+        setVetError(vetFetchError.message)
+      } else {
+        setVets(vetData ?? [])
+      }
     }
 
     const [
@@ -426,34 +669,34 @@ export default function DogDetailsScreen() {
       supabase
         .from('doghealthy_health_records')
         .select(
-          'id, record_date, record_type, title, description, diagnosis, treatment, veterinarian_name, clinic_name, cost, notes'
+          'id, record_date, record_type, title, description, diagnosis, treatment, veterinarian_name, clinic_name, cost, notes, vet_id'
         )
         .eq('dog_id', id)
         .order('record_date', { ascending: false }),
       supabase
         .from('doghealthy_vaccinations')
         .select(
-          'id, vaccine_name, vaccine_type, vaccination_date, next_due_date, veterinarian_name, clinic_name, notes, cost'
+          'id, vaccine_name, vaccine_type, vaccination_date, next_due_date, veterinarian_name, clinic_name, notes, cost, vet_id'
         )
         .eq('dog_id', id)
         .order('vaccination_date', { ascending: false }),
       supabase
         .from('doghealthy_medications')
         .select(
-          'id, medication_name, dosage, frequency, start_date, end_date, prescribed_by, purpose, side_effects, instructions, notes, is_active'
+          'id, medication_name, dosage, frequency, start_date, end_date, prescribed_by, purpose, side_effects, instructions, notes, is_active, vet_id'
         )
         .eq('dog_id', id)
         .order('start_date', { ascending: false }),
       supabase
         .from('doghealthy_appointments')
         .select(
-          'id, appointment_date, appointment_type, title, description, location, veterinarian_name, clinic_name, clinic_phone, status, notes'
+          'id, appointment_date, appointment_type, title, description, location, veterinarian_name, clinic_name, clinic_phone, status, notes, vet_id'
         )
         .eq('dog_id', id)
         .order('appointment_date', { ascending: false }),
       supabase
         .from('doghealthy_weight_logs')
-        .select('id, weight_kg, measurement_date, notes')
+        .select('id, weight_kg, measurement_date, notes, vet_id')
         .eq('dog_id', id)
         .order('measurement_date', { ascending: false }),
     ])
@@ -491,43 +734,203 @@ export default function DogDetailsScreen() {
     setLoading(false)
   }, [id])
 
-  useEffect(() => {
-    fetchData()
-  }, [fetchData])
+  useFocusEffect(
+    useCallback(() => {
+      fetchData()
+    }, [fetchData]),
+  )
 
-  function toggleSection(key: SectionKey) {
-    setExpandedSection((current) => (current === key ? null : key))
+  function ensureVetAvailability() {
+    if (vets.length > 0) {
+      return true
+    }
+
+    Alert.alert(
+      'Add a vet first',
+      'You need to add a vet profile from My Dogs before recording health information.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Go to My Dogs',
+          onPress: () => router.push('/my-dogs' as any),
+        },
+      ],
+    )
+    return false
+  }
+
+  function openVetPicker(section: SectionKey) {
+    if (!ensureVetAvailability()) {
+      return
+    }
+    setVetPickerFor(section)
+  }
+
+  function getFormVetId(section: SectionKey) {
+    switch (section) {
+      case 'health':
+        return healthForm.vet_id ?? null
+      case 'vaccinations':
+        return vaccinationForm.vet_id ?? null
+      case 'medications':
+        return medicationForm.vet_id ?? null
+      case 'appointments':
+        return appointmentForm.vet_id ?? null
+      case 'weight':
+        return weightForm.vet_id ?? null
+      default:
+        return null
+    }
+  }
+
+  function setFormVetId(section: SectionKey, vetId: string) {
+    const vet = vets.find((item) => item.id === vetId) ?? null
+    switch (section) {
+      case 'health':
+        setHealthForm((prev) => ({
+          ...prev,
+          vet_id: vetId,
+          veterinarian_name: vet?.name ?? prev.veterinarian_name,
+          clinic_name: vet?.clinic_name ?? prev.clinic_name,
+        }))
+        break
+      case 'vaccinations':
+        setVaccinationForm((prev) => ({
+          ...prev,
+          vet_id: vetId,
+          veterinarian_name: vet?.name ?? prev.veterinarian_name,
+          clinic_name: vet?.clinic_name ?? prev.clinic_name,
+        }))
+        break
+      case 'medications':
+        setMedicationForm((prev) => ({
+          ...prev,
+          vet_id: vetId,
+          prescribed_by: vet?.name ?? prev.prescribed_by,
+        }))
+        break
+      case 'appointments':
+        setAppointmentForm((prev) => ({
+          ...prev,
+          vet_id: vetId,
+          veterinarian_name: vet?.name ?? prev.veterinarian_name,
+          clinic_name: vet?.clinic_name ?? prev.clinic_name,
+          clinic_phone: vet?.phone ?? prev.clinic_phone,
+        }))
+        break
+      case 'weight':
+        setWeightForm((prev) => ({ ...prev, vet_id: vetId }))
+        break
+    }
+  }
+
+  function handleVetSelect(vetId: string) {
+    if (!vetPickerFor) return
+    setFormVetId(vetPickerFor, vetId)
+    setVetPickerFor(null)
   }
 
   function openHealthModal() {
-    setHealthForm({ ...INITIAL_HEALTH_FORM })
+    if (!ensureVetAvailability()) {
+      return
+    }
+    const defaultVet = vets[0] ?? null
+    setHealthForm({
+      ...INITIAL_HEALTH_FORM,
+      vet_id: defaultVet?.id ?? null,
+      veterinarian_name: defaultVet?.name ?? '',
+      clinic_name: defaultVet?.clinic_name ?? '',
+    })
     setShowHealthModal(true)
   }
 
+  function closeHealthModal() {
+    setShowHealthModal(false)
+    setVetPickerFor(null)
+  }
+
   function openVaccinationModal() {
-    setVaccinationForm({ ...INITIAL_VACCINATION_FORM })
+    if (!ensureVetAvailability()) {
+      return
+    }
+    const defaultVet = vets[0] ?? null
+    setVaccinationForm({
+      ...INITIAL_VACCINATION_FORM,
+      vet_id: defaultVet?.id ?? null,
+      veterinarian_name: defaultVet?.name ?? '',
+      clinic_name: defaultVet?.clinic_name ?? '',
+    })
     setShowVaccinationModal(true)
   }
 
+  function closeVaccinationModal() {
+    setShowVaccinationModal(false)
+    setVetPickerFor(null)
+  }
+
   function openMedicationModal() {
-    setMedicationForm({ ...INITIAL_MEDICATION_FORM })
+    if (!ensureVetAvailability()) {
+      return
+    }
+    const defaultVet = vets[0] ?? null
+    setMedicationForm({
+      ...INITIAL_MEDICATION_FORM,
+      vet_id: defaultVet?.id ?? null,
+      prescribed_by: defaultVet?.name ?? '',
+    })
     setShowMedicationModal(true)
   }
 
+  function closeMedicationModal() {
+    setShowMedicationModal(false)
+    setVetPickerFor(null)
+  }
+
   function openAppointmentModal() {
-    setAppointmentForm({ ...INITIAL_APPOINTMENT_FORM })
+    if (!ensureVetAvailability()) {
+      return
+    }
+    const defaultVet = vets[0] ?? null
+    setAppointmentForm({
+      ...INITIAL_APPOINTMENT_FORM,
+      vet_id: defaultVet?.id ?? null,
+      veterinarian_name: defaultVet?.name ?? '',
+      clinic_name: defaultVet?.clinic_name ?? '',
+      clinic_phone: defaultVet?.phone ?? '',
+    })
     setShowAppointmentModal(true)
   }
 
+  function closeAppointmentModal() {
+    setShowAppointmentModal(false)
+    setVetPickerFor(null)
+  }
+
   function openWeightModal() {
-    setWeightForm({ ...INITIAL_WEIGHT_FORM })
+    if (!ensureVetAvailability()) {
+      return
+    }
+    const defaultVet = vets[0] ?? null
+    setWeightForm({
+      ...INITIAL_WEIGHT_FORM,
+      vet_id: defaultVet?.id ?? null,
+    })
     setShowWeightModal(true)
+  }
+
+  function closeWeightModal() {
+    setShowWeightModal(false)
+    setVetPickerFor(null)
   }
 
   async function handleSubmitHealth() {
     if (!id) return
     if (!healthForm.title.trim()) {
       Alert.alert('Add health record', 'Please enter a title before saving.')
+      return
+    }
+    if (!healthForm.vet_id) {
+      Alert.alert('Add health record', 'Select a vet before saving.')
       return
     }
 
@@ -545,6 +948,7 @@ export default function DogDetailsScreen() {
         clinic_name: toNullableString(healthForm.clinic_name),
         cost: toNullableNumber(healthForm.cost),
         notes: toNullableString(healthForm.notes),
+        vet_id: healthForm.vet_id,
       })
 
       if (insertError) {
@@ -552,10 +956,10 @@ export default function DogDetailsScreen() {
         return
       }
 
-      setShowHealthModal(false)
+      closeHealthModal()
       setHealthForm({ ...INITIAL_HEALTH_FORM })
       await fetchData()
-      setExpandedSection('health')
+      setActiveTab('health')
       Alert.alert('Health record added', 'The health record has been saved.')
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
@@ -571,6 +975,10 @@ export default function DogDetailsScreen() {
       Alert.alert('Add vaccination', 'Please enter the vaccination name.')
       return
     }
+    if (!vaccinationForm.vet_id) {
+      Alert.alert('Add vaccination', 'Select a vet before saving.')
+      return
+    }
 
     try {
       setSavingVaccination(true)
@@ -584,6 +992,7 @@ export default function DogDetailsScreen() {
         clinic_name: toNullableString(vaccinationForm.clinic_name),
         cost: toNullableNumber(vaccinationForm.cost),
         notes: toNullableString(vaccinationForm.notes),
+        vet_id: vaccinationForm.vet_id,
       })
 
       if (insertError) {
@@ -591,10 +1000,10 @@ export default function DogDetailsScreen() {
         return
       }
 
-      setShowVaccinationModal(false)
+      closeVaccinationModal()
       setVaccinationForm({ ...INITIAL_VACCINATION_FORM })
       await fetchData()
-      setExpandedSection('vaccinations')
+      setActiveTab('vaccinations')
       Alert.alert('Vaccination added', 'The vaccination record has been saved.')
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
@@ -608,6 +1017,10 @@ export default function DogDetailsScreen() {
     if (!id) return
     if (!medicationForm.medication_name.trim()) {
       Alert.alert('Add medication', 'Please enter the medication name.')
+      return
+    }
+    if (!medicationForm.vet_id) {
+      Alert.alert('Add medication', 'Select a vet before saving.')
       return
     }
 
@@ -626,6 +1039,7 @@ export default function DogDetailsScreen() {
         instructions: toNullableString(medicationForm.instructions),
         notes: toNullableString(medicationForm.notes),
         is_active: medicationForm.is_active,
+        vet_id: medicationForm.vet_id,
       })
 
       if (insertError) {
@@ -633,10 +1047,10 @@ export default function DogDetailsScreen() {
         return
       }
 
-      setShowMedicationModal(false)
+      closeMedicationModal()
       setMedicationForm({ ...INITIAL_MEDICATION_FORM })
       await fetchData()
-      setExpandedSection('medications')
+      setActiveTab('medications')
       Alert.alert('Medication added', 'The medication record has been saved.')
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
@@ -650,6 +1064,10 @@ export default function DogDetailsScreen() {
     if (!id) return
     if (!appointmentForm.title.trim()) {
       Alert.alert('Add appointment', 'Please enter the appointment title.')
+      return
+    }
+    if (!appointmentForm.vet_id) {
+      Alert.alert('Add appointment', 'Select a vet before saving.')
       return
     }
 
@@ -667,6 +1085,7 @@ export default function DogDetailsScreen() {
         clinic_phone: toNullableString(appointmentForm.clinic_phone),
         status: toNullableString(appointmentForm.status),
         notes: toNullableString(appointmentForm.notes),
+        vet_id: appointmentForm.vet_id,
       })
 
       if (insertError) {
@@ -674,10 +1093,10 @@ export default function DogDetailsScreen() {
         return
       }
 
-      setShowAppointmentModal(false)
+      closeAppointmentModal()
       setAppointmentForm({ ...INITIAL_APPOINTMENT_FORM })
       await fetchData()
-      setExpandedSection('appointments')
+      setActiveTab('appointments')
       Alert.alert('Appointment added', 'The appointment has been saved.')
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
@@ -694,6 +1113,10 @@ export default function DogDetailsScreen() {
       Alert.alert('Add weight log', 'Please enter your dog’s weight in kilograms.')
       return
     }
+    if (!weightForm.vet_id) {
+      Alert.alert('Add weight entry', 'Select a vet before saving.')
+      return
+    }
 
     try {
       setSavingWeight(true)
@@ -702,6 +1125,7 @@ export default function DogDetailsScreen() {
         measurement_date: toNullableString(weightForm.measurement_date),
         weight_kg: weightValue,
         notes: toNullableString(weightForm.notes),
+        vet_id: weightForm.vet_id,
       })
 
       if (insertError) {
@@ -709,10 +1133,10 @@ export default function DogDetailsScreen() {
         return
       }
 
-      setShowWeightModal(false)
+      closeWeightModal()
       setWeightForm({ ...INITIAL_WEIGHT_FORM })
       await fetchData()
-      setExpandedSection('weight')
+      setActiveTab('weight')
       Alert.alert('Weight entry added', 'The weight entry has been saved.')
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
@@ -781,196 +1205,69 @@ export default function DogDetailsScreen() {
         </View>
       ) : null}
 
-      <SectionAccordion
-        title="Health Records"
-        expanded={expandedSection === 'health'}
-        onToggle={() => toggleSection('health')}
-        onAdd={openHealthModal}
-        error={healthError}
-        emptyMessage="No health records yet."
-        isEmpty={healthRecords.length === 0}
-      >
-        {healthRecords.map((record) => (
-          <View key={record.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{record.title ?? 'Health record'}</Text>
-            <Text style={styles.cardMeta}>
-              {formatDate(record.record_date) ?? 'Date unknown'} · {record.record_type ?? 'General'}
-            </Text>
-            {record.clinic_name || record.veterinarian_name ? (
-              <Text style={styles.cardMeta}>
-                {record.clinic_name ?? 'Clinic'} • {record.veterinarian_name ?? 'Vet'}
-              </Text>
-            ) : null}
-            {record.diagnosis ? (
-              <Text style={styles.cardMeta}>Diagnosis: {record.diagnosis}</Text>
-            ) : null}
-            {record.treatment ? (
-              <Text style={styles.cardMeta}>Treatment: {record.treatment}</Text>
-            ) : null}
-            {formatCurrency(record.cost) ? (
-              <Text style={styles.cardMeta}>Cost: {formatCurrency(record.cost)}</Text>
-            ) : null}
-            {record.description ? (
-              <Text style={styles.cardNotes}>{record.description}</Text>
-            ) : null}
-            {record.notes ? <Text style={styles.cardNotes}>{record.notes}</Text> : null}
-          </View>
-        ))}
-      </SectionAccordion>
+      {vetError ? <Text style={styles.sectionError}>{vetError}</Text> : null}
+      {!vetError && vets.length === 0 ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionEmpty}>
+            Add your vet from the My Dogs page to enable health records.
+          </Text>
+        </View>
+      ) : null}
 
-      <SectionAccordion
-        title="Vaccinations"
-        expanded={expandedSection === 'vaccinations'}
-        onToggle={() => toggleSection('vaccinations')}
-        onAdd={openVaccinationModal}
-        error={vaccinationError}
-        emptyMessage="No vaccination history yet."
-        isEmpty={vaccinations.length === 0}
-      >
-        {vaccinations.map((vaccination) => (
-          <View key={vaccination.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{vaccination.vaccine_name ?? 'Vaccination'}</Text>
-            <Text style={styles.cardMeta}>
-              {formatDate(vaccination.vaccination_date) ?? 'Date unknown'}
-              {vaccination.vaccine_type ? ` • ${vaccination.vaccine_type}` : ''}
-            </Text>
-            {formatDate(vaccination.next_due_date) ? (
-              <Text style={styles.cardMeta}>
-                Next due: {formatDate(vaccination.next_due_date)}
-              </Text>
-            ) : null}
-            {vaccination.clinic_name || vaccination.veterinarian_name ? (
-              <Text style={styles.cardMeta}>
-                {vaccination.clinic_name ?? 'Clinic'} • {vaccination.veterinarian_name ?? 'Vet'}
-              </Text>
-            ) : null}
-            {formatCurrency(vaccination.cost) ? (
-              <Text style={styles.cardMeta}>Cost: {formatCurrency(vaccination.cost)}</Text>
-            ) : null}
-            {vaccination.notes ? (
-              <Text style={styles.cardNotes}>{vaccination.notes}</Text>
-            ) : null}
-          </View>
-        ))}
-      </SectionAccordion>
-
-      <SectionAccordion
-        title="Medications"
-        expanded={expandedSection === 'medications'}
-        onToggle={() => toggleSection('medications')}
-        onAdd={openMedicationModal}
-        error={medicationError}
-        emptyMessage="No medications recorded."
-        isEmpty={medications.length === 0}
-      >
-        {medications.map((medication) => (
-          <View key={medication.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{medication.medication_name ?? 'Medication'}</Text>
-            <Text style={styles.cardMeta}>
-              {medication.dosage ?? 'Dosage n/a'}
-              {medication.frequency ? ` • ${medication.frequency}` : ''}
-            </Text>
-            <Text style={styles.cardMeta}>
-              {formatDate(medication.start_date) ?? 'Start n/a'} –{' '}
-              {formatDate(medication.end_date) ?? 'Ongoing'}
-            </Text>
-            {medication.prescribed_by ? (
-              <Text style={styles.cardMeta}>Prescribed by {medication.prescribed_by}</Text>
-            ) : null}
-            {medication.purpose ? (
-              <Text style={styles.cardNotes}>Purpose: {medication.purpose}</Text>
-            ) : null}
-            {medication.side_effects ? (
-              <Text style={styles.cardNotes}>Side effects: {medication.side_effects}</Text>
-            ) : null}
-            {medication.instructions ? (
-              <Text style={styles.cardNotes}>Instructions: {medication.instructions}</Text>
-            ) : null}
-            {medication.notes ? <Text style={styles.cardNotes}>{medication.notes}</Text> : null}
-            {medication.is_active === false ? (
-              <Text style={styles.cardMeta}>Status: Completed</Text>
-            ) : null}
-          </View>
-        ))}
-      </SectionAccordion>
-
-      <SectionAccordion
-        title="Appointments"
-        expanded={expandedSection === 'appointments'}
-        onToggle={() => toggleSection('appointments')}
-        onAdd={openAppointmentModal}
-        error={appointmentError}
-        emptyMessage="No appointments scheduled."
-        isEmpty={appointments.length === 0}
-      >
-        {appointments.map((appointment) => (
-          <View key={appointment.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{appointment.title ?? 'Appointment'}</Text>
-            <Text style={styles.cardMeta}>
-              {formatDateTime(appointment.appointment_date) ?? 'Date/time n/a'}
-            </Text>
-            {appointment.appointment_type ? (
-              <Text style={styles.cardMeta}>Type: {appointment.appointment_type}</Text>
-            ) : null}
-            {appointment.location ? (
-              <Text style={styles.cardMeta}>Location: {appointment.location}</Text>
-            ) : null}
-            {appointment.clinic_name || appointment.veterinarian_name ? (
-              <Text style={styles.cardMeta}>
-                {appointment.clinic_name ?? 'Clinic'} • {appointment.veterinarian_name ?? 'Vet'}
-              </Text>
-            ) : null}
-            {appointment.clinic_phone ? (
-              <Text style={styles.cardMeta}>Phone: {appointment.clinic_phone}</Text>
-            ) : null}
-            {appointment.status ? (
-              <Text style={styles.cardMeta}>Status: {appointment.status}</Text>
-            ) : null}
-            {appointment.description ? (
-              <Text style={styles.cardNotes}>{appointment.description}</Text>
-            ) : null}
-            {appointment.notes ? <Text style={styles.cardNotes}>{appointment.notes}</Text> : null}
-          </View>
-        ))}
-      </SectionAccordion>
-
-      <SectionAccordion
-        title="Weight Logs"
-        expanded={expandedSection === 'weight'}
-        onToggle={() => toggleSection('weight')}
-        onAdd={openWeightModal}
-        error={weightError}
-        emptyMessage="No weight entries yet."
-        isEmpty={weightLogs.length === 0}
-      >
-        {weightLogs.map((log) => {
-          const weightValue = parseNumeric(log.weight_kg)
+      <View style={styles.tabBar}>
+        {tabItems.map((tab) => {
+          const isActive = tab.key === activeTab
           return (
-            <View key={log.id} style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {formatDate(log.measurement_date) ?? 'Measurement date n/a'}
-              </Text>
-              <Text style={styles.cardMeta}>
-                Weight: {weightValue !== null ? `${weightValue} kg` : 'Unknown'}
-              </Text>
-              {log.notes ? <Text style={styles.cardNotes}>{log.notes}</Text> : null}
-            </View>
+            <Pressable
+              key={tab.key}
+              style={[styles.tabItem, isActive && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <Text style={[styles.tabItemLabel, isActive && styles.tabItemLabelActive]}>{tab.label}</Text>
+            </Pressable>
           )
         })}
-      </SectionAccordion>
+      </View>
+      <View style={styles.tabActions}>
+        <Pressable style={styles.addButton} onPress={activeTabConfig.onAdd}>
+          <Text style={styles.addButtonLabel}>+ Add</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.section}>
+        {tabError ? <Text style={styles.sectionError}>{tabError}</Text> : null}
+        {!tabError && isTabEmpty ? (
+          <Text style={styles.sectionEmpty}>{tabEmptyMessage}</Text>
+        ) : null}
+        {!tabError && !isTabEmpty ? tabContent : null}
+      </View>
       </ScrollView>
       {/* Modals */}
-      <Modal
-        visible={showHealthModal}
-        animationType="slide"
-        onRequestClose={() => setShowHealthModal(false)}
-      >
+      <Modal visible={showHealthModal} animationType="slide" onRequestClose={closeHealthModal}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          <View style={modalHeaderStyle}>
+            <Pressable style={styles.modalHeaderAction} onPress={closeHealthModal}>
+              <Text style={styles.modalHeaderActionLabel}>Back</Text>
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Health Record</Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add Health Record</Text>
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Veterinarian</Text>
+              <Pressable style={styles.selector} onPress={() => openVetPicker('health')}>
+                <Text style={styles.selectorValue}>
+                  {selectedHealthVet?.name ?? 'Select a vet'}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedHealthVet?.clinic_name ?? 'Tap to choose your vet'}
+                </Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.modalInput}
               value={healthForm.title}
@@ -1037,7 +1334,7 @@ export default function DogDetailsScreen() {
               multiline
             />
             <View style={styles.modalActions}>
-              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={() => setShowHealthModal(false)}>
+              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={closeHealthModal}>
                 <Text style={styles.modalCancelLabel}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -1052,17 +1349,31 @@ export default function DogDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        visible={showVaccinationModal}
-        animationType="slide"
-        onRequestClose={() => setShowVaccinationModal(false)}
-      >
+      <Modal visible={showVaccinationModal} animationType="slide" onRequestClose={closeVaccinationModal}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          <View style={modalHeaderStyle}>
+            <Pressable style={styles.modalHeaderAction} onPress={closeVaccinationModal}>
+              <Text style={styles.modalHeaderActionLabel}>Back</Text>
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Vaccination</Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add Vaccination</Text>
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Veterinarian</Text>
+              <Pressable style={styles.selector} onPress={() => openVetPicker('vaccinations')}>
+                <Text style={styles.selectorValue}>
+                  {selectedVaccinationVet?.name ?? 'Select a vet'}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedVaccinationVet?.clinic_name ?? 'Tap to choose your vet'}
+                </Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.modalInput}
               value={vaccinationForm.vaccine_name}
@@ -1114,10 +1425,7 @@ export default function DogDetailsScreen() {
               multiline
             />
             <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalButton, styles.modalCancel]}
-                onPress={() => setShowVaccinationModal(false)}
-              >
+              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={closeVaccinationModal}>
                 <Text style={styles.modalCancelLabel}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -1132,17 +1440,31 @@ export default function DogDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        visible={showMedicationModal}
-        animationType="slide"
-        onRequestClose={() => setShowMedicationModal(false)}
-      >
+      <Modal visible={showMedicationModal} animationType="slide" onRequestClose={closeMedicationModal}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          <View style={modalHeaderStyle}>
+            <Pressable style={styles.modalHeaderAction} onPress={closeMedicationModal}>
+              <Text style={styles.modalHeaderActionLabel}>Back</Text>
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Medication</Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add Medication</Text>
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Veterinarian</Text>
+              <Pressable style={styles.selector} onPress={() => openVetPicker('medications')}>
+                <Text style={styles.selectorValue}>
+                  {selectedMedicationVet?.name ?? 'Select a vet'}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedMedicationVet?.clinic_name ?? 'Tap to choose your vet'}
+                </Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.modalInput}
               value={medicationForm.medication_name}
@@ -1217,10 +1539,7 @@ export default function DogDetailsScreen() {
               />
             </View>
             <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalButton, styles.modalCancel]}
-                onPress={() => setShowMedicationModal(false)}
-              >
+              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={closeMedicationModal}>
                 <Text style={styles.modalCancelLabel}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -1235,17 +1554,31 @@ export default function DogDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        visible={showAppointmentModal}
-        animationType="slide"
-        onRequestClose={() => setShowAppointmentModal(false)}
-      >
+      <Modal visible={showAppointmentModal} animationType="slide" onRequestClose={closeAppointmentModal}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          <View style={modalHeaderStyle}>
+            <Pressable style={styles.modalHeaderAction} onPress={closeAppointmentModal}>
+              <Text style={styles.modalHeaderActionLabel}>Back</Text>
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Appointment</Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add Appointment</Text>
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Veterinarian</Text>
+              <Pressable style={styles.selector} onPress={() => openVetPicker('appointments')}>
+                <Text style={styles.selectorValue}>
+                  {selectedAppointmentVet?.name ?? 'Select a vet'}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedAppointmentVet?.clinic_name ?? 'Tap to choose your vet'}
+                </Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.modalInput}
               value={appointmentForm.title}
@@ -1310,10 +1643,7 @@ export default function DogDetailsScreen() {
               multiline
             />
             <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalButton, styles.modalCancel]}
-                onPress={() => setShowAppointmentModal(false)}
-              >
+              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={closeAppointmentModal}>
                 <Text style={styles.modalCancelLabel}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -1328,17 +1658,31 @@ export default function DogDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-      <Modal
-        visible={showWeightModal}
-        animationType="slide"
-        onRequestClose={() => setShowWeightModal(false)}
-      >
+      <Modal visible={showWeightModal} animationType="slide" onRequestClose={closeWeightModal}>
         <KeyboardAvoidingView
           style={styles.modalContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
+          <View style={modalHeaderStyle}>
+            <Pressable style={styles.modalHeaderAction} onPress={closeWeightModal}>
+              <Text style={styles.modalHeaderActionLabel}>Back</Text>
+            </Pressable>
+            <Text style={styles.modalHeaderTitle}>Weight Entry</Text>
+            <View style={styles.modalHeaderSpacer} />
+          </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
             <Text style={styles.modalTitle}>Add Weight Entry</Text>
+            <View style={styles.modalField}>
+              <Text style={styles.modalLabel}>Veterinarian</Text>
+              <Pressable style={styles.selector} onPress={() => openVetPicker('weight')}>
+                <Text style={styles.selectorValue}>
+                  {selectedWeightVet?.name ?? 'Select a vet'}
+                </Text>
+                <Text style={styles.selectorHint}>
+                  {selectedWeightVet?.clinic_name ?? 'Tap to choose your vet'}
+                </Text>
+              </Pressable>
+            </View>
             <TextInput
               style={styles.modalInput}
               value={weightForm.weight_kg}
@@ -1360,10 +1704,7 @@ export default function DogDetailsScreen() {
               multiline
             />
             <View style={styles.modalActions}>
-              <Pressable
-                style={[styles.modalButton, styles.modalCancel]}
-                onPress={() => setShowWeightModal(false)}
-              >
+              <Pressable style={[styles.modalButton, styles.modalCancel]} onPress={closeWeightModal}>
                 <Text style={styles.modalCancelLabel}>Cancel</Text>
               </Pressable>
               <Pressable
@@ -1376,6 +1717,56 @@ export default function DogDetailsScreen() {
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={vetPickerFor !== null}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setVetPickerFor(null)}
+      >
+        <Pressable style={styles.pickerBackdrop} onPress={() => setVetPickerFor(null)}>
+          <Pressable style={pickerContainerStyle} onPress={() => {}}>
+            <View style={modalHeaderStyle}>
+              <Pressable style={styles.modalHeaderAction} onPress={() => setVetPickerFor(null)}>
+                <Text style={styles.modalHeaderActionLabel}>Cancel</Text>
+              </Pressable>
+              <Text style={styles.modalHeaderTitle}>Select Veterinarian</Text>
+              <View style={styles.modalHeaderSpacer} />
+            </View>
+            <ScrollView contentContainerStyle={styles.pickerList}>
+              {vets.length === 0 ? (
+                <View style={styles.pickerEmpty}>
+                  <Text style={styles.sectionEmpty}>No vets found. Add a vet from My Dogs.</Text>
+                </View>
+              ) : (
+                vets.map((vet) => {
+                  const isSelected =
+                    vetPickerFor !== null && vet.id === getFormVetId(vetPickerFor)
+                  return (
+                    <Pressable
+                      key={vet.id}
+                      style={[styles.pickerOption, isSelected && styles.pickerOptionSelected]}
+                      onPress={() => vet.id && handleVetSelect(vet.id)}
+                    >
+                      <Text style={styles.pickerOptionText}>{vet.name ?? 'Unnamed vet'}</Text>
+                      {vet.clinic_name ? (
+                        <Text style={styles.pickerOptionSubtext}>{vet.clinic_name}</Text>
+                      ) : null}
+                      {vet.phone ? (
+                        <Text style={styles.pickerOptionSubtext}>{vet.phone}</Text>
+                      ) : null}
+                      {vet.email ? (
+                        <Text style={styles.pickerOptionSubtext}>{vet.email}</Text>
+                      ) : null}
+                    </Pressable>
+                  )
+                })
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
       </Modal>
     </>
   )
@@ -1427,6 +1818,42 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 8,
     elevation: 3,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#E6F0EB',
+    borderRadius: 999,
+    padding: 4,
+    gap: 4,
+    marginBottom: 12,
+  },
+  tabItem: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  tabItemActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#2C6E49',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  tabItemLabel: {
+    fontSize: 14,
+    color: '#2C6E49',
+    fontWeight: '500',
+  },
+  tabItemLabelActive: {
+    color: '#1B4332',
+    fontWeight: '700',
+  },
+  tabActions: {
+    alignItems: 'flex-end',
+    marginBottom: 12,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1514,6 +1941,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F7FBFF',
   },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 12,
+    backgroundColor: '#F7FBFF',
+  },
+  modalHeaderAction: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  modalHeaderActionLabel: {
+    fontSize: 16,
+    color: '#2C6E49',
+    fontWeight: '600',
+  },
+  modalHeaderTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1B4332',
+  },
+  modalHeaderSpacer: {
+    width: 60,
+  },
   modalContent: {
     padding: 24,
     gap: 12,
@@ -1533,6 +1986,32 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 16,
     color: '#1B4332',
+  },
+  modalField: {
+    gap: 6,
+  },
+  modalLabel: {
+    fontSize: 16,
+    color: '#2C6E49',
+    fontWeight: '600',
+  },
+  selector: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CCE3DE',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 4,
+  },
+  selectorValue: {
+    fontSize: 16,
+    color: '#1B4332',
+    fontWeight: '600',
+  },
+  selectorHint: {
+    fontSize: 14,
+    color: '#6B9080',
   },
   modalMultiline: {
     minHeight: 100,
@@ -1578,5 +2057,49 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2C6E49',
     fontWeight: '500',
+  },
+  pickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  pickerContainer: {
+    backgroundColor: '#F7FBFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: '70%',
+  },
+  pickerList: {
+    padding: 24,
+    gap: 12,
+  },
+  pickerEmpty: {
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+  },
+  pickerOption: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CCE3DE',
+    padding: 16,
+    gap: 4,
+  },
+  pickerOptionSelected: {
+    borderColor: '#2C6E49',
+    shadowColor: '#2C6E49',
+    shadowOpacity: 0.15,
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  pickerOptionText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1B4332',
+  },
+  pickerOptionSubtext: {
+    fontSize: 14,
+    color: '#6B9080',
   },
 })

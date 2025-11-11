@@ -1,7 +1,7 @@
 import 'react-native-url-polyfill/auto'
 
 import { Session } from '@supabase/supabase-js'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     ActivityIndicator,
@@ -29,6 +29,14 @@ type Dog = {
   name?: string | null
   breed?: string | null
   birth_date?: string | null
+}
+
+type Vet = {
+  id: string
+  name?: string | null
+  clinic_name?: string | null
+  phone?: string | null
+  email?: string | null
 }
 
 const LOGGED_OUT_MENU: MenuItem[] = [
@@ -91,6 +99,9 @@ export default function Index() {
   const [dogs, setDogs] = useState<Dog[]>([])
   const [dogsLoading, setDogsLoading] = useState(false)
   const [dogsError, setDogsError] = useState<string | null>(null)
+  const [vets, setVets] = useState<Vet[]>([])
+  const [vetsLoading, setVetsLoading] = useState(false)
+  const [vetsError, setVetsError] = useState<string | null>(null)
 
   const router = useRouter()
   const insets = useSafeAreaInsets()
@@ -149,9 +160,46 @@ export default function Index() {
     setDogsLoading(false)
   }, [session?.user.id])
 
+  const fetchVets = useCallback(async () => {
+    if (!isMountedRef.current) {
+      return
+    }
+
+    const userId = session?.user.id
+    if (!userId) {
+      setVets([])
+      return
+    }
+
+    setVetsLoading(true)
+    setVetsError(null)
+
+    const { data, error } = await supabase
+      .from('doghealthy_vets')
+      .select('id, name, clinic_name, phone, email')
+      .eq('user_id', userId)
+      .order('name', { ascending: true })
+
+    if (!isMountedRef.current) {
+      return
+    }
+
+    if (error) {
+      setVetsError(error.message)
+      setVets([])
+    } else {
+      setVets(data ?? [])
+    }
+
+    setVetsLoading(false)
+  }, [session?.user.id])
+
   useEffect(() => {
     if (!session) {
       setDogs([])
+      setVets([])
+      setVetsError(null)
+      setVetsLoading(false)
       setIsMenuVisible(false)
       if (dogsChannelRef.current) {
         supabase.removeChannel(dogsChannelRef.current)
@@ -161,6 +209,7 @@ export default function Index() {
     }
 
     fetchDogs()
+    fetchVets()
 
     if (dogsChannelRef.current) {
       supabase.removeChannel(dogsChannelRef.current)
@@ -191,7 +240,15 @@ export default function Index() {
         dogsChannelRef.current = null
       }
     }
-  }, [session, fetchDogs])
+  }, [session, fetchDogs, fetchVets])
+
+  useFocusEffect(
+    useCallback(() => {
+      if (session?.user.id) {
+        fetchVets()
+      }
+    }, [session?.user.id, fetchVets]),
+  )
 
   const menuItems = useMemo(() => (session ? LOGGED_IN_MENU : LOGGED_OUT_MENU), [session])
 
@@ -315,6 +372,51 @@ export default function Index() {
               </View>
             </View>
           ))}
+        </View>
+      )}
+
+      {session && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>My Veterinarians</Text>
+          {vetsLoading && <ActivityIndicator />}
+          {vetsError && <Text style={styles.errorText}>{vetsError}</Text>}
+          {!vetsLoading && !vetsError && vets.length === 0 && (
+            <Text style={styles.helperText}>
+              No vets saved yet. Add your preferred clinic to link health records quickly.
+            </Text>
+          )}
+          {vets.map((vet) => (
+            <View key={vet.id} style={styles.vetCard}>
+              <View style={styles.vetInfo}>
+                <Text style={styles.vetName}>{vet.name ?? 'Veterinarian'}</Text>
+                {vet.clinic_name ? <Text style={styles.vetMeta}>{vet.clinic_name}</Text> : null}
+                {vet.phone ? <Text style={styles.vetMeta}>Phone: {vet.phone}</Text> : null}
+                {vet.email ? <Text style={styles.vetMeta}>Email: {vet.email}</Text> : null}
+              </View>
+              <View style={styles.vetActions}>
+                <Pressable
+                  style={[styles.actionButton, styles.editButton]}
+                  onPress={() => router.push(`/my-dogs/vets/${vet.id}/edit` as any)}
+                >
+                  <Text style={styles.actionLabel}>Edit</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+          <View style={styles.vetActionRow}>
+            <Pressable
+              style={[styles.actionButton, styles.addVetButton]}
+              onPress={() => router.push('/my-dogs/vets/new' as any)}
+            >
+              <Text style={styles.actionLabel}>Add Vet</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionButton, styles.manageVetButton]}
+              onPress={() => router.push('/my-dogs/vets' as any)}
+            >
+              <Text style={styles.actionLabel}>Manage</Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </ScrollView>
@@ -478,5 +580,41 @@ const styles = StyleSheet.create({
   },
   editButton: {
     backgroundColor: '#1B998B',
+  },
+  vetCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E5EC',
+    padding: 16,
+    marginTop: 12,
+    gap: 10,
+  },
+  vetInfo: {
+    gap: 4,
+  },
+  vetName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1B4332',
+  },
+  vetMeta: {
+    fontSize: 14,
+    color: '#6B9080',
+  },
+  vetActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  vetActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addVetButton: {
+    backgroundColor: '#2C6E49',
+    flex: 1,
+  },
+  manageVetButton: {
+    backgroundColor: '#1B4332',
+    flex: 1,
   },
 })
