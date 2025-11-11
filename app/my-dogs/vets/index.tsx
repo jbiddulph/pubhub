@@ -89,7 +89,12 @@ export default function VetDirectoryScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>My Veterinarians</Text>
+      <View style={styles.header}>
+        <Pressable style={styles.backButton} onPress={() => router.back()}>
+          <Text style={styles.backButtonLabel}>&lt; Home</Text>
+        </Pressable>
+        <Text style={styles.title}>My Veterinarians</Text>
+      </View>
       <Text style={styles.subtitle}>Manage the clinics and professionals who care for your dog.</Text>
 
       {loading && (
@@ -134,6 +139,21 @@ const styles = StyleSheet.create({
     padding: 24,
     gap: 16,
     backgroundColor: '#F7FBFF',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  backButton: {
+    paddingVertical: 8,
+    paddingRight: 12,
+  },
+  backButtonLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C6E49',
   },
   title: {
     fontSize: 32,

@@ -130,7 +130,6 @@ export default function FoodFinderScreen() {
             ? rawBreedSizesSource.split(/[,/]/).map((value: string) => value.trim())
             : []
           const lifeStage = (item.life_stage ?? 'adult').toString().toLowerCase()
-          const priceRange = (item.price_range ?? '30-50').toString().toLowerCase()
           const dietsRaw: string[] = Array.isArray(item.diets)
             ? item.diets
             : typeof item.diets === 'string'
@@ -143,11 +142,6 @@ export default function FoodFinderScreen() {
               .toLowerCase()
               .replace(/\s+/g, '-'),
           )
-
-          const normalisedPrice = priceRange
-            .replace(/£/g, '')
-            .replace(/\s+/g, '-')
-            .replace(/\+/g, '-plus')
 
           return {
             id:
@@ -172,12 +166,14 @@ export default function FoodFinderScreen() {
             lifeStage: (['puppy', 'adult', 'senior'].includes(lifeStage)
               ? lifeStage
               : 'adult') as FoodProduct['lifeStage'],
-            priceRange: (['under-30', '30-50', '50-100', '100-plus'].includes(normalisedPrice)
-              ? normalisedPrice
-              : '30-50') as FoodProduct['priceRange'],
             diets: normalisedDiets,
             rating: Number(item.rating) || 0,
-            price: Number(item.price) || 0,
+            price:
+              item.price_gbp === null || item.price_gbp === undefined
+                ? null
+                : typeof item.price_gbp === 'number'
+                ? item.price_gbp
+                : Number(item.price_gbp) || null,
             description: item.description ?? 'Delicious meal for happy, healthy dogs.',
             imageUrl: item.image_url ?? null,
             affiliateUrl: item.affiliate_url ?? null,
@@ -209,7 +205,21 @@ export default function FoodFinderScreen() {
       items = items.filter((item) => item.lifeStage === selectedLifeStage)
     }
     if (selectedPrice !== 'all') {
-      items = items.filter((item) => item.priceRange === selectedPrice)
+      items = items.filter((item) => {
+        if (item.price === null) return false
+        switch (selectedPrice) {
+          case 'under-30':
+            return item.price < 30
+          case '30-50':
+            return item.price >= 30 && item.price < 50
+          case '50-100':
+            return item.price >= 50 && item.price < 100
+          case '100-plus':
+            return item.price >= 100
+          default:
+            return true
+        }
+      })
     }
     if (selectedDiet !== 'all') {
       items = items.filter((item) => item.diets.includes(selectedDiet))
@@ -217,10 +227,20 @@ export default function FoodFinderScreen() {
 
     switch (sortOption) {
       case 'price-asc':
-        items.sort((a, b) => a.price - b.price)
+        items.sort((a, b) => {
+          if (a.price === null && b.price === null) return 0
+          if (a.price === null) return 1
+          if (b.price === null) return -1
+          return a.price - b.price
+        })
         break
       case 'price-desc':
-        items.sort((a, b) => b.price - a.price)
+        items.sort((a, b) => {
+          if (a.price === null && b.price === null) return 0
+          if (a.price === null) return 1
+          if (b.price === null) return -1
+          return b.price - a.price
+        })
         break
       case 'name-asc':
         items.sort((a, b) => a.name.localeCompare(b.name))
@@ -273,7 +293,8 @@ export default function FoodFinderScreen() {
         <Text style={styles.productDescription}>{product.description}</Text>
         <View style={styles.productMetaRow}>
           <Text style={styles.productMeta}>
-            ⭐ {product.rating.toFixed(1)} · £{product.price.toFixed(2)}
+            ⭐ {product.rating.toFixed(1)} ·{' '}
+            {product.price !== null ? `£${product.price.toFixed(2)}` : 'Price not listed'}
           </Text>
           <Text style={styles.productMeta}>
             {product.lifeStage.charAt(0).toUpperCase() + product.lifeStage.slice(1)} ·{' '}
