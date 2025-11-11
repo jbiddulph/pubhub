@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "PubHub",
-    "slug": "PubHub",
+    "name": "DogHealthy",
+    "slug": "doghealthy",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.jarv81178.PubHub",
+      "bundleIdentifier": "com.jarv81178.doghealthy",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

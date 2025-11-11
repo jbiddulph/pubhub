@@ -10,8 +10,16 @@ export default function Auth() {
 
   async function signInWithEmail() {
     setLoading(true)
+    const emailValue = email.trim().toLowerCase()
+
+    if (!emailValue || !password) {
+      Alert.alert('Enter both email and password.')
+      setLoading(false)
+      return
+    }
+
     const { error } = await supabase.auth.signInWithPassword({
-      email: email,
+      email: emailValue,
       password: password,
     })
 
@@ -21,11 +29,19 @@ export default function Auth() {
 
   async function signUpWithEmail() {
     setLoading(true)
+    const emailValue = email.trim().toLowerCase()
+
+    if (!emailValue || !password) {
+      Alert.alert('Enter both email and password.')
+      setLoading(false)
+      return
+    }
+
     const {
       data: { session },
       error,
     } = await supabase.auth.signUp({
-      email: email,
+      email: emailValue,
       password: password,
     })
 

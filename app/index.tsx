@@ -1,13 +1,59 @@
-import { Session } from '@supabase/supabase-js'
-import { useEffect, useState } from 'react'
-import { Text, View } from 'react-native'
 import 'react-native-url-polyfill/auto'
+
+import { Session } from '@supabase/supabase-js'
+import { useRouter } from 'expo-router'
+import { useEffect, useMemo, useState } from 'react'
+import {
+    ActivityIndicator,
+    FlatList,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View,
+} from 'react-native'
 
 import Auth from '@/components/Auth'
 import { supabase } from '@/lib/supabase'
 
+type MenuItem = {
+  id: string
+  label: string
+  route?: string
+  action?: 'logout' | 'login' | 'register'
+}
+
+type Dog = {
+  id: string
+  name?: string | null
+  breed?: string | null
+  age?: number | null
+}
+
+const LOGGED_OUT_MENU: MenuItem[] = [
+  { id: 'food', label: 'Food Finder', route: '/food-finder' },
+  { id: 'classifieds', label: 'Classifieds', route: '/classifieds' },
+  { id: 'members', label: 'Members', route: '/members' },
+  { id: 'login', label: 'Login', action: 'login' },
+  { id: 'register', label: 'Register', action: 'register' },
+]
+
+const LOGGED_IN_MENU: MenuItem[] = [
+  { id: 'food', label: 'Food Finder', route: '/food-finder' },
+  { id: 'classifieds', label: 'Classifieds', route: '/classifieds' },
+  { id: 'members', label: 'Members', route: '/members' },
+  { id: 'dogs', label: 'My Dogs', route: '/my-dogs' },
+  { id: 'logout', label: 'Logout', action: 'logout' },
+]
+
 export default function Index() {
   const [session, setSession] = useState<Session | null>(null)
+  const [isAuthExpanded, setIsAuthExpanded] = useState(false)
+  const [dogs, setDogs] = useState<Dog[]>([])
+  const [dogsLoading, setDogsLoading] = useState(false)
+  const [dogsError, setDogsError] = useState<string | null>(null)
+
+  const router = useRouter()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -17,18 +63,286 @@ export default function Index() {
     return () => listener.subscription.unsubscribe()
   }, [])
 
-  if (!session) {
-    return (
-      <View>
-        <Auth />
-      </View>
-    )
+  useEffect(() => {
+    if (!session) {
+      setDogs([])
+      return
+    }
+
+    let isMounted = true
+
+    async function fetchDogs() {
+      setDogsLoading(true)
+      setDogsError(null)
+
+      const ownerId = session?.user.id
+      if (!ownerId) {
+        setDogs([])
+        setDogsLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('doghealthy_dogs')
+        .select('id, name, breed, age')
+        .eq('owner_id', ownerId)
+        .order('name', { ascending: true })
+
+      if (!isMounted) {
+        return
+      }
+
+      if (error) {
+        setDogsError(error.message)
+        setDogs([])
+      } else {
+        setDogs(data ?? [])
+      }
+
+      setDogsLoading(false)
+    }
+
+    fetchDogs()
+
+    return () => {
+      isMounted = false
+    }
+  }, [session])
+
+  const menuItems = useMemo(() => (session ? LOGGED_IN_MENU : LOGGED_OUT_MENU), [session])
+
+  async function handleMenuItemPress(item: MenuItem) {
+    if (item.action === 'logout') {
+      await supabase.auth.signOut()
+      return
+    }
+
+    if (item.action === 'login' || item.action === 'register') {
+      setIsAuthExpanded(true)
+      return
+    }
+
+    if (item.route) {
+      router.push(item.route as any)
+    }
   }
 
   return (
-    <View>
-      <Text>Signed in as {session.user.email}</Text>
-      {/* render your tab navigator or redirect here */}
-    </View>
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.hero}>
+        <Text style={styles.brand}>DogHealthy</Text>
+        <Text style={styles.tagline}>Wellness for every wag.</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Menu</Text>
+        <FlatList
+          data={menuItems}
+          scrollEnabled={false}
+          keyExtractor={(item) => item.id}
+          renderItem={({ item }) => (
+            <Pressable onPress={() => handleMenuItemPress(item)} style={styles.menuItem}>
+              <Text style={styles.menuLabel}>{item.label}</Text>
+            </Pressable>
+          )}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+        />
+      </View>
+
+      {!session && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Sign in to DogHealthy</Text>
+          {isAuthExpanded ? (
+            <Auth />
+          ) : (
+            <Pressable style={styles.authPrompt} onPress={() => setIsAuthExpanded(true)}>
+              <Text style={styles.authPromptText}>Tap to sign in or register</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
+      {session && (
+        <View style={styles.section}>
+          <View style={styles.sessionHeader}>
+            <Text style={styles.sectionTitle}>Welcome back</Text>
+            <Pressable style={styles.logoutButton} onPress={() => supabase.auth.signOut()}>
+              <Text style={styles.logoutLabel}>Logout</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.sessionSubhead}>{session.user.email}</Text>
+        </View>
+      )}
+
+      {session && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>My Dogs</Text>
+          {dogsLoading && <ActivityIndicator />}
+          {dogsError && <Text style={styles.errorText}>{dogsError}</Text>}
+          {!dogsLoading && !dogsError && dogs.length === 0 && (
+            <Text style={styles.helperText}>
+              No dogs found yet. Add your first companion from the My Dogs section.
+            </Text>
+          )}
+          {dogs.map((dog) => (
+            <View key={dog.id} style={styles.dogCard}>
+              <View style={styles.dogInfo}>
+                <Text style={styles.dogName}>{dog.name ?? 'Unnamed Friend'}</Text>
+                {dog.breed ? <Text style={styles.dogBreed}>{dog.breed}</Text> : null}
+                {typeof dog.age === 'number' ? (
+                  <Text style={styles.dogAge}>{dog.age} years old</Text>
+                ) : null}
+              </View>
+              <View style={styles.dogActions}>
+                <Pressable
+                  style={[styles.actionButton, styles.viewButton]}
+                  onPress={() => router.push(`/my-dogs/${dog.id}` as any)}>
+                  <Text style={styles.actionLabel}>View Details</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.actionButton, styles.editButton]}
+                  onPress={() => router.push(`/my-dogs/${dog.id}/edit` as any)}>
+                  <Text style={styles.actionLabel}>Edit</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </ScrollView>
   )
 }
+
+const styles = StyleSheet.create({
+  container: {
+    padding: 24,
+    gap: 24,
+    backgroundColor: '#F7FBFF',
+  },
+  hero: {
+    backgroundColor: '#2C6E49',
+    borderRadius: 16,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  brand: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  tagline: {
+    marginTop: 8,
+    fontSize: 16,
+    color: '#F3F7F0',
+  },
+  section: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#1B4332',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+    gap: 16,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#1B4332',
+  },
+  menuItem: {
+    paddingVertical: 12,
+  },
+  menuLabel: {
+    fontSize: 16,
+    color: '#2C6E49',
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#E0E5EC',
+  },
+  authPrompt: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CCE3DE',
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authPromptText: {
+    color: '#2C6E49',
+    fontWeight: '500',
+  },
+  sessionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sessionSubhead: {
+    fontSize: 16,
+    color: '#2C6E49',
+  },
+  logoutButton: {
+    backgroundColor: '#BC4749',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  logoutLabel: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  helperText: {
+    fontSize: 14,
+    color: '#6B9080',
+  },
+  errorText: {
+    color: '#BC4749',
+    fontWeight: '500',
+  },
+  dogCard: {
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E5EC',
+    padding: 16,
+    marginTop: 12,
+    gap: 12,
+  },
+  dogInfo: {
+    gap: 4,
+  },
+  dogName: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1B4332',
+  },
+  dogBreed: {
+    fontSize: 14,
+    color: '#6B9080',
+  },
+  dogAge: {
+    fontSize: 14,
+    color: '#6B9080',
+  },
+  dogActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    borderRadius: 999,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  actionLabel: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  viewButton: {
+    backgroundColor: '#2C6E49',
+  },
+  editButton: {
+    backgroundColor: '#1B998B',
+  },
+})
