@@ -12,6 +12,7 @@ import {
     Text,
     View,
 } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import Auth from '@/components/Auth'
 import { supabase } from '@/lib/supabase'
@@ -49,11 +50,13 @@ const LOGGED_IN_MENU: MenuItem[] = [
 export default function Index() {
   const [session, setSession] = useState<Session | null>(null)
   const [isAuthExpanded, setIsAuthExpanded] = useState(false)
+  const [isMenuVisible, setIsMenuVisible] = useState(false)
   const [dogs, setDogs] = useState<Dog[]>([])
   const [dogsLoading, setDogsLoading] = useState(false)
   const [dogsError, setDogsError] = useState<string | null>(null)
 
   const router = useRouter()
+  const insets = useSafeAreaInsets()
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -66,6 +69,7 @@ export default function Index() {
   useEffect(() => {
     if (!session) {
       setDogs([])
+      setIsMenuVisible(false)
       return
     }
 
@@ -114,40 +118,59 @@ export default function Index() {
   async function handleMenuItemPress(item: MenuItem) {
     if (item.action === 'logout') {
       await supabase.auth.signOut()
+      setIsMenuVisible(false)
       return
     }
 
     if (item.action === 'login' || item.action === 'register') {
       setIsAuthExpanded(true)
+      setIsMenuVisible(false)
       return
     }
 
     if (item.route) {
       router.push(item.route as any)
+      setIsMenuVisible(false)
     }
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingTop: 24 + insets.top }]}>
       <View style={styles.hero}>
-        <Text style={styles.brand}>DogHealthy</Text>
-        <Text style={styles.tagline}>Wellness for every wag.</Text>
+        <View style={styles.heroHeader}>
+          <View>
+            <Text style={styles.brand}>DogHealthy</Text>
+            <Text style={styles.tagline}>Wellness for every wag.</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={isMenuVisible ? 'Hide menu' : 'Show menu'}
+            accessibilityHint="Toggle the DogHealthy navigation menu"
+            onPress={() => setIsMenuVisible((prev) => !prev)}
+            style={styles.menuToggle}>
+            <View style={styles.menuToggleBar} />
+            <View style={styles.menuToggleBar} />
+            <View style={styles.menuToggleBar} />
+          </Pressable>
+        </View>
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Menu</Text>
-        <FlatList
-          data={menuItems}
-          scrollEnabled={false}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Pressable onPress={() => handleMenuItemPress(item)} style={styles.menuItem}>
-              <Text style={styles.menuLabel}>{item.label}</Text>
-            </Pressable>
-          )}
-          ItemSeparatorComponent={() => <View style={styles.separator} />}
-        />
-      </View>
+      {isMenuVisible && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Menu</Text>
+          <FlatList
+            data={menuItems}
+            scrollEnabled={false}
+            keyExtractor={(item) => item.id}
+            renderItem={({ item }) => (
+              <Pressable onPress={() => handleMenuItemPress(item)} style={styles.menuItem}>
+                <Text style={styles.menuLabel}>{item.label}</Text>
+              </Pressable>
+            )}
+            ItemSeparatorComponent={() => <View style={styles.separator} />}
+          />
+        </View>
+      )}
 
       {!session && (
         <View style={styles.section}>
@@ -225,6 +248,11 @@ const styles = StyleSheet.create({
     paddingVertical: 32,
     paddingHorizontal: 24,
   },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   brand: {
     fontSize: 32,
     fontWeight: '700',
@@ -234,6 +262,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontSize: 16,
     color: '#F3F7F0',
+  },
+  menuToggle: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3F7F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  menuToggleBar: {
+    width: 24,
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: '#FFFFFF',
   },
   section: {
     backgroundColor: '#FFFFFF',
