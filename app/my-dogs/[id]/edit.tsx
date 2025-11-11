@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase'
 type Dog = {
   name?: string | null
   breed?: string | null
+  breed_size?: string | null
   gender?: string | null
   birth_date?: string | null
   weight_kg?: number | null
@@ -39,7 +40,7 @@ export default function EditDogScreen() {
       const { data, error } = await supabase
         .from('doghealthy_dogs')
         .select(
-          'name, breed, gender, birth_date, weight_kg, color, microchip_number, notes, photo_url'
+          'name, breed, breed_size, gender, birth_date, weight_kg, color, microchip_number, notes, photo_url'
         )
         .eq('id', id)
         .maybeSingle()
@@ -121,6 +122,7 @@ export default function EditDogScreen() {
     const payload = {
       name: dog.name ?? null,
       breed: dog.breed ?? null,
+      breed_size: dog.breed_size ?? null,
       gender: dog.gender ?? null,
       birth_date: dog.birth_date ? dog.birth_date : null,
       weight_kg: typeof dog.weight_kg === 'number' ? dog.weight_kg : null,
@@ -206,6 +208,15 @@ export default function EditDogScreen() {
           value={dog.breed ?? ''}
           onChangeText={(text) => updateField('breed', text)}
           placeholder="Breed"
+        />
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Breed size</Text>
+        <TextInput
+          style={styles.input}
+          value={dog.breed_size ?? ''}
+          onChangeText={(text) => updateField('breed_size', text)}
+          placeholder="Small / Medium / Large"
         />
       </View>
       <View style={styles.field}>

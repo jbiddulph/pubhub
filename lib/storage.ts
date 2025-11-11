@@ -1,5 +1,6 @@
 import 'react-native-url-polyfill/auto'
 
+import { Buffer } from 'buffer'
 import * as FileSystem from 'expo-file-system'
 
 import { supabase } from './supabase'
@@ -46,24 +47,39 @@ export async function uploadDogPhoto(
     const extensionMatch = localUri.split('.').pop()
     const extension = extensionMatch?.split('?')[0]
     const contentType = guessContentType(extension)
-    let blob: Blob
+    let blob: Blob | null = null
 
     if (localUri.startsWith('data:')) {
       const response = await fetch(localUri)
       blob = await response.blob()
     } else {
-      const fileInfo = await FileSystem.getInfoAsync(localUri)
-
-      if (!fileInfo.exists) {
-        throw new Error('Selected photo could not be accessed on this device.')
+      try {
+        const response = await fetch(localUri)
+        if (response.ok) {
+          blob = await response.blob()
+        }
+      } catch {
+        // swallow and attempt fallback
       }
 
-      const base64 = await FileSystem.readAsStringAsync(localUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      })
-      const dataUri = `data:${contentType};base64,${base64}`
-      const response = await fetch(dataUri)
-      blob = await response.blob()
+      if (!blob) {
+        const fileInfo = await FileSystem.getInfoAsync(localUri)
+
+        if (!fileInfo.exists) {
+          throw new Error('Selected photo could not be accessed on this device.')
+        }
+
+        const base64 = await FileSystem.readAsStringAsync(localUri, {
+          encoding: 'base64',
+        })
+
+        const byteArray = Buffer.from(base64, 'base64')
+        blob = new Blob([byteArray], { type: contentType })
+      }
+    }
+
+    if (!blob) {
+      throw new Error('Unable to prepare photo for upload.')
     }
 
     const inferredExtension = blob.type?.split('/')[1]
@@ -108,12 +124,7 @@ export function getPublicDogPhotoUrl(photoPath?: string | null) {
   }
 
   const normalizedPath = normalizeDogPhotoPath(photoPath)
-  const { data, error } = supabase.storage.from('doghealthy').getPublicUrl(normalizedPath)
-
-  if (error) {
-    console.warn('Failed to get public dog photo URL', error)
-    return null
-  }
+  const { data } = supabase.storage.from('doghealthy').getPublicUrl(normalizedPath)
 
   return data?.publicUrl ?? null
 }

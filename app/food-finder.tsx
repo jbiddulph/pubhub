@@ -1,12 +1,17 @@
 import { ReactNode, useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native'
+import { Image } from 'expo-image'
+
+import { supabase } from '@/lib/supabase'
 
 type FoodProduct = {
   id: string
@@ -20,114 +25,9 @@ type FoodProduct = {
   rating: number
   price: number
   description: string
+  imageUrl: string | null
+  affiliateUrl: string | null
 }
-
-const PRODUCTS: FoodProduct[] = [
-  {
-    id: 'wild-harvest',
-    name: 'Wild Harvest Grain Free Salmon',
-    brand: 'Wild Harvest',
-    type: 'dry',
-    breedSizes: ['medium', 'large'],
-    lifeStage: 'adult',
-    priceRange: '30-50',
-    diets: ['grain-free'],
-    rating: 4.8,
-    price: 42,
-    description: 'High-protein salmon recipe with sweet potato and botanicals for active dogs.',
-  },
-  {
-    id: 'gentle-puppy',
-    name: 'Gentle Start Chicken & Rice',
-    brand: 'Gentle Start',
-    type: 'dry',
-    breedSizes: ['small', 'medium'],
-    lifeStage: 'puppy',
-    priceRange: '30-50',
-    diets: ['sensitive-stomach'],
-    rating: 4.6,
-    price: 38,
-    description: 'Easily digestible kibble with prebiotics to support developing stomachs.',
-  },
-  {
-    id: 'peak-wet',
-    name: 'Peak Nutrition Turkey Stew',
-    brand: 'Peak Nutrition',
-    type: 'wet',
-    breedSizes: ['small', 'medium', 'large'],
-    lifeStage: 'adult',
-    priceRange: 'under-30',
-    diets: ['weight-management'],
-    rating: 4.4,
-    price: 28,
-    description: 'Slow-cooked turkey with veg in gravy for dogs watching their weight.',
-  },
-  {
-    id: 'heritage-raw',
-    name: 'Heritage Raw Feast',
-    brand: 'Heritage Kitchen',
-    type: 'raw',
-    breedSizes: ['medium', 'large'],
-    lifeStage: 'adult',
-    priceRange: '50-100',
-    diets: ['grain-free'],
-    rating: 4.9,
-    price: 68,
-    description: 'Complete raw diet with 80/10/10 blend, ideal for experienced raw feeders.',
-  },
-  {
-    id: 'velvet-senior',
-    name: 'Velvet Senior Lamb & Veg',
-    brand: 'Velvet Care',
-    type: 'dry',
-    breedSizes: ['small', 'medium', 'large'],
-    lifeStage: 'senior',
-    priceRange: '30-50',
-    diets: ['hypoallergenic'],
-    rating: 4.5,
-    price: 44,
-    description: 'Joint-supporting recipe with green-lipped mussel and gentle lamb protein.',
-  },
-  {
-    id: 'air-dried-gourmet',
-    name: 'Air-Dried Gourmet Chicken Bites',
-    brand: 'Tailwind',
-    type: 'freeze-dried',
-    breedSizes: ['small', 'medium'],
-    lifeStage: 'adult',
-    priceRange: '50-100',
-    diets: ['grain-free', 'sensitive-stomach'],
-    rating: 4.7,
-    price: 72,
-    description: 'Lightweight, high-value bites perfect as toppers or training food.',
-  },
-  {
-    id: 'budget-wet',
-    name: 'Budget Bites Beef Casserole',
-    brand: 'Budget Bites',
-    type: 'wet',
-    breedSizes: ['small', 'medium', 'large'],
-    lifeStage: 'adult',
-    priceRange: 'under-30',
-    diets: [],
-    rating: 4.2,
-    price: 24,
-    description: 'Affordable, hearty beef casserole with added vitamins and minerals.',
-  },
-  {
-    id: 'absolute-lite',
-    name: 'Absolute Balance Lite',
-    brand: 'Absolute Balance',
-    type: 'dry',
-    breedSizes: ['small', 'medium', 'large'],
-    lifeStage: 'adult',
-    priceRange: '30-50',
-    diets: ['weight-management'],
-    rating: 4.3,
-    price: 36,
-    description: 'Lower calorie chicken recipe designed for dogs prone to weight gain.',
-  },
-]
 
 const FOOD_TYPE_OPTIONS = [
   { label: 'All', value: 'all' },
@@ -194,6 +94,7 @@ function FilterPill({ label, selected, onPress }: FilterPillProps) {
 }
 
 export default function FoodFinderScreen() {
+  const [products, setProducts] = useState<FoodProduct[]>([])
   const [selectedType, setSelectedType] = useState('all')
   const [selectedSize, setSelectedSize] = useState('all')
   const [selectedLifeStage, setSelectedLifeStage] = useState('all')
@@ -201,16 +102,102 @@ export default function FoodFinderScreen() {
   const [selectedDiet, setSelectedDiet] = useState('all')
   const [sortOption, setSortOption] = useState('rating-desc')
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    let isMounted = true
+    async function loadProducts() {
+      setLoading(true)
+      setError(null)
+      const { data, error: fetchError } = await supabase
+        .from('doghealthy_dog_food_products')
+        .select(
+          'id, name, brand, food_type, breed_sizes, breed_size, life_stage, price_range, diets, rating, price, description, affiliate_url, image_url',
+        )
+
+      if (!isMounted) return
+
+      if (fetchError) {
+        setError(fetchError.message)
+        setProducts([])
+      } else {
+        const mapped: FoodProduct[] = (data ?? []).map((item: any) => {
+          const type = (item.food_type ?? 'dry').toString().toLowerCase()
+          const rawBreedSizesSource = item.breed_sizes ?? item.breed_size ?? ''
+          const breedSizesRaw: string[] = Array.isArray(rawBreedSizesSource)
+            ? rawBreedSizesSource
+            : typeof rawBreedSizesSource === 'string'
+            ? rawBreedSizesSource.split(/[,/]/).map((value: string) => value.trim())
+            : []
+          const lifeStage = (item.life_stage ?? 'adult').toString().toLowerCase()
+          const priceRange = (item.price_range ?? '30-50').toString().toLowerCase()
+          const dietsRaw: string[] = Array.isArray(item.diets)
+            ? item.diets
+            : typeof item.diets === 'string'
+            ? item.diets.split(',').map((value: string) => value.trim())
+            : []
+
+          const normalisedDiets = dietsRaw.map((diet) =>
+            diet
+              .toString()
+              .toLowerCase()
+              .replace(/\s+/g, '-'),
+          )
+
+          const normalisedPrice = priceRange
+            .replace(/£/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/\+/g, '-plus')
+
+          return {
+            id:
+              (item.id ? String(item.id) : null) ??
+              `${(item.name ?? 'product').toString().toLowerCase().replace(/\s+/g, '-')}-${Math.random()
+                .toString(36)
+                .slice(2, 8)}`,
+            name: item.name ?? 'Dog food',
+            brand: item.brand ?? 'DogHealthy',
+            type: (type === 'freeze dried' ? 'freeze-dried' : type) as FoodProduct['type'],
+            breedSizes:
+              breedSizesRaw.length === 0
+                ? (['small', 'medium', 'large'] as Array<'small' | 'medium' | 'large'>)
+                : (breedSizesRaw
+                    .map((size) => size.toLowerCase())
+                    .flatMap((size) =>
+                      size.includes('all') ? ['small', 'medium', 'large'] : [size],
+                    )
+                    .filter((size) => ['small', 'medium', 'large'].includes(size)) as Array<
+                    'small' | 'medium' | 'large'
+                  >),
+            lifeStage: (['puppy', 'adult', 'senior'].includes(lifeStage)
+              ? lifeStage
+              : 'adult') as FoodProduct['lifeStage'],
+            priceRange: (['under-30', '30-50', '50-100', '100-plus'].includes(normalisedPrice)
+              ? normalisedPrice
+              : '30-50') as FoodProduct['priceRange'],
+            diets: normalisedDiets,
+            rating: Number(item.rating) || 0,
+            price: Number(item.price) || 0,
+            description: item.description ?? 'Delicious meal for happy, healthy dogs.',
+            imageUrl: item.image_url ?? null,
+            affiliateUrl: item.affiliate_url ?? null,
+          }
+        })
+        setProducts(mapped)
+      }
+
       setLoading(false)
-    }, 600)
-    return () => clearTimeout(timer)
+    }
+
+    loadProducts()
+
+    return () => {
+      isMounted = false
+    }
   }, [])
 
   const filteredProducts = useMemo(() => {
-    let items = PRODUCTS.slice()
+    let items = products.slice()
 
     if (selectedType !== 'all') {
       items = items.filter((item) => item.type === selectedType)
@@ -245,7 +232,7 @@ export default function FoodFinderScreen() {
     }
 
     return items
-  }, [selectedType, selectedSize, selectedLifeStage, selectedPrice, selectedDiet, sortOption])
+  }, [products, selectedType, selectedSize, selectedLifeStage, selectedPrice, selectedDiet, sortOption])
 
   const hasActiveFilters =
     selectedType !== 'all' ||
@@ -263,9 +250,19 @@ export default function FoodFinderScreen() {
     setSortOption('rating-desc')
   }
 
+  function handleBuy(url: string) {
+    Linking.openURL(url).catch((linkError) => {
+      Alert.alert('Open link', 'Unable to open the retailer link right now.')
+      console.warn('Failed to open affiliate link', linkError)
+    })
+  }
+
   function renderProduct(product: FoodProduct): ReactNode {
     return (
       <View key={product.id} style={styles.productCard}>
+        {product.imageUrl ? (
+          <Image source={product.imageUrl} style={styles.productImage} contentFit="cover" />
+        ) : null}
         <View style={styles.productHeader}>
           <View style={styles.productTitleRow}>
             <Text style={styles.productTitle}>{product.name}</Text>
@@ -296,6 +293,11 @@ export default function FoodFinderScreen() {
               </View>
             ))}
           </View>
+        ) : null}
+        {product.affiliateUrl ? (
+          <Pressable style={styles.buyButton} onPress={() => handleBuy(product.affiliateUrl!)}>
+            <Text style={styles.buyButtonLabel}>Buy Now</Text>
+          </Pressable>
         ) : null}
       </View>
     )
@@ -395,6 +397,8 @@ export default function FoodFinderScreen() {
           </Pressable>
         ) : null}
       </View>
+
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
       {loading ? (
         <ActivityIndicator color="#2C6E49" style={styles.loadingIndicator} />
@@ -511,6 +515,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1B4332',
   },
+  errorText: {
+    fontSize: 14,
+    color: '#BC4749',
+    marginTop: -4,
+  },
   clearFilters: {
     fontSize: 14,
     color: '#BC4749',
@@ -551,6 +560,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     elevation: 2,
+  },
+  productImage: {
+    width: '100%',
+    height: 180,
+    borderRadius: 12,
+    backgroundColor: '#E6F0EB',
   },
   productHeader: {
     gap: 4,
@@ -607,6 +622,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#2C6E49',
     fontWeight: '600',
+  },
+  buyButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: '#BC4749',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  buyButtonLabel: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   disclosure: {
     backgroundColor: '#FFFFFF',

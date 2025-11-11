@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase'
 type DogForm = {
   name: string
   breed: string
+  breed_size?: string
   gender?: string
   birth_date?: string
   weight_kg?: number | null
@@ -21,6 +22,7 @@ type DogForm = {
 const INITIAL_FORM: DogForm = {
   name: '',
   breed: '',
+  breed_size: '',
   gender: '',
   birth_date: '',
   weight_kg: undefined,
@@ -101,6 +103,7 @@ export default function NewDogScreen() {
         user_id: session.user.id,
         name: form.name || null,
         breed: form.breed || null,
+        breed_size: form.breed_size || null,
         gender: form.gender || null,
         birth_date: form.birth_date || null,
         weight_kg: form.weight_kg ?? null,
@@ -147,6 +150,15 @@ export default function NewDogScreen() {
           value={form.breed}
           onChangeText={(text) => updateField('breed', text)}
           placeholder="Breed"
+        />
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Breed size</Text>
+        <TextInput
+          style={styles.input}
+          value={form.breed_size ?? ''}
+          onChangeText={(text) => updateField('breed_size', text)}
+          placeholder="Small / Medium / Large"
         />
       </View>
 
