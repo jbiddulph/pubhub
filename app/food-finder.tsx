@@ -20,10 +20,9 @@ type FoodProduct = {
   type: 'dry' | 'wet' | 'raw' | 'freeze-dried'
   breedSizes: Array<'small' | 'medium' | 'large'>
   lifeStage: 'puppy' | 'adult' | 'senior'
-  priceRange: 'under-30' | '30-50' | '50-100' | '100-plus'
   diets: string[]
   rating: number
-  price: number
+  price: number | null
   description: string
   imageUrl: string | null
   affiliateUrl: string | null
@@ -112,7 +111,7 @@ export default function FoodFinderScreen() {
       const { data, error: fetchError } = await supabase
         .from('doghealthy_dog_food_products')
         .select(
-          'id, name, brand, food_type, breed_sizes, breed_size, life_stage, price_range, diets, rating, price, description, affiliate_url, image_url',
+          'id, name, brand, food_type, breed_sizes, breed_size, life_stage, price_gbp, diets, rating, description, affiliate_url, image_url',
         )
 
       if (!isMounted) return
@@ -130,18 +129,21 @@ export default function FoodFinderScreen() {
             ? rawBreedSizesSource.split(/[,/]/).map((value: string) => value.trim())
             : []
           const lifeStage = (item.life_stage ?? 'adult').toString().toLowerCase()
-          const dietsRaw: string[] = Array.isArray(item.diets)
-            ? item.diets
-            : typeof item.diets === 'string'
-            ? item.diets.split(',').map((value: string) => value.trim())
-            : []
+          const dietsRaw: string[] =
+            Array.isArray(item.diets) || item.diets === null || item.diets === undefined
+              ? (item.diets ?? [])
+              : typeof item.diets === 'string'
+              ? item.diets.split(',').map((value: string) => value.trim())
+              : []
 
-          const normalisedDiets = dietsRaw.map((diet) =>
-            diet
-              .toString()
-              .toLowerCase()
-              .replace(/\s+/g, '-'),
-          )
+          const normalisedDiets = dietsRaw
+            .map((diet) =>
+              diet
+                .toString()
+                .toLowerCase()
+                .replace(/\s+/g, '-'),
+            )
+            .filter(Boolean)
 
           return {
             id:
