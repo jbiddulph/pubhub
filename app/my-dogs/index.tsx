@@ -8,8 +8,42 @@ type Dog = {
   id: string
   name?: string | null
   breed?: string | null
-  age?: number | null
+  birth_date?: string | null
   notes?: string | null
+}
+
+function computeDogAgeLabel(birthDate?: string | null) {
+  if (!birthDate) return null
+  const date = new Date(birthDate)
+  if (Number.isNaN(date.getTime())) return null
+
+  const now = new Date()
+  let years = now.getFullYear() - date.getFullYear()
+  let months = now.getMonth() - date.getMonth()
+
+  if (months < 0 || (months === 0 && now.getDate() < date.getDate())) {
+    years -= 1
+    months += 12
+  }
+
+  if (years < 0) return null
+
+  if (years === 0) {
+    return months <= 1 ? 'Less than a month old' : `${months} months old`
+  }
+
+  if (months === 0) {
+    return years === 1 ? '1 year old' : `${years} years old`
+  }
+
+  return `${years}y ${months}m old`
+}
+
+function formatBirthDate(dateString?: string | null) {
+  if (!dateString) return null
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString()
 }
 
 export default function MyDogsScreen() {
@@ -32,8 +66,8 @@ export default function MyDogsScreen() {
 
       const { data, error } = await supabase
         .from('doghealthy_dogs')
-        .select('id, name, breed, age, notes')
-        .eq('owner_id', session.user.id)
+        .select('id, name, breed, birth_date, notes')
+        .eq('user_id', session.user.id)
         .order('name', { ascending: true })
 
       if (error) {
@@ -65,8 +99,11 @@ export default function MyDogsScreen() {
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>{dog.name ?? 'Unnamed Friend'}</Text>
             {dog.breed ? <Text style={styles.cardMeta}>{dog.breed}</Text> : null}
-            {typeof dog.age === 'number' ? (
-              <Text style={styles.cardMeta}>{dog.age} years old</Text>
+            {computeDogAgeLabel(dog.birth_date) ? (
+              <Text style={styles.cardMeta}>{computeDogAgeLabel(dog.birth_date)}</Text>
+            ) : null}
+            {formatBirthDate(dog.birth_date) ? (
+              <Text style={styles.cardMeta}>Born {formatBirthDate(dog.birth_date)}</Text>
             ) : null}
           </View>
           {dog.notes ? <Text style={styles.notes}>{dog.notes}</Text> : null}

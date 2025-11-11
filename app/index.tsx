@@ -28,7 +28,7 @@ type Dog = {
   id: string
   name?: string | null
   breed?: string | null
-  age?: number | null
+  birth_date?: string | null
 }
 
 const LOGGED_OUT_MENU: MenuItem[] = [
@@ -46,6 +46,43 @@ const LOGGED_IN_MENU: MenuItem[] = [
   { id: 'dogs', label: 'My Dogs', route: '/my-dogs' },
   { id: 'logout', label: 'Logout', action: 'logout' },
 ]
+
+function computeDogAgeLabel(birthDate: string) {
+  const date = new Date(birthDate)
+  if (Number.isNaN(date.getTime())) {
+    return 'Age unavailable'
+  }
+
+  const now = new Date()
+  let years = now.getFullYear() - date.getFullYear()
+  let months = now.getMonth() - date.getMonth()
+
+  if (months < 0 || (months === 0 && now.getDate() < date.getDate())) {
+    years -= 1
+    months += 12
+  }
+
+  if (years < 0) {
+    return 'Age unavailable'
+  }
+
+  if (years === 0) {
+    return months <= 1 ? 'Less than a month old' : `${months} months old`
+  }
+
+  if (months === 0) {
+    return years === 1 ? '1 year old' : `${years} years old`
+  }
+
+  return `${years}y ${months}m old`
+}
+
+function formatBirthDate(dateString?: string | null) {
+  if (!dateString) return null
+  const date = new Date(dateString)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString()
+}
 
 export default function Index() {
   const [session, setSession] = useState<Session | null>(null)
@@ -79,8 +116,8 @@ export default function Index() {
       setDogsLoading(true)
       setDogsError(null)
 
-      const ownerId = session?.user.id
-      if (!ownerId) {
+      const userId = session?.user.id
+      if (!userId) {
         setDogs([])
         setDogsLoading(false)
         return
@@ -88,8 +125,8 @@ export default function Index() {
 
       const { data, error } = await supabase
         .from('doghealthy_dogs')
-        .select('id, name, breed, age')
-        .eq('owner_id', ownerId)
+        .select('id, name, breed, birth_date')
+        .eq('user_id', userId)
         .order('name', { ascending: true })
 
       if (!isMounted) {
@@ -212,8 +249,13 @@ export default function Index() {
               <View style={styles.dogInfo}>
                 <Text style={styles.dogName}>{dog.name ?? 'Unnamed Friend'}</Text>
                 {dog.breed ? <Text style={styles.dogBreed}>{dog.breed}</Text> : null}
-                {typeof dog.age === 'number' ? (
-                  <Text style={styles.dogAge}>{dog.age} years old</Text>
+                {dog.birth_date ? (
+                  <>
+                    <Text style={styles.dogAge}>{computeDogAgeLabel(dog.birth_date)}</Text>
+                    {formatBirthDate(dog.birth_date) ? (
+                      <Text style={styles.dogMeta}>Born {formatBirthDate(dog.birth_date)}</Text>
+                    ) : null}
+                  </>
                 ) : null}
               </View>
               <View style={styles.dogActions}>
@@ -369,6 +411,10 @@ const styles = StyleSheet.create({
   dogAge: {
     fontSize: 14,
     color: '#6B9080',
+  },
+  dogMeta: {
+    fontSize: 12,
+    color: '#839788',
   },
   dogActions: {
     flexDirection: 'row',

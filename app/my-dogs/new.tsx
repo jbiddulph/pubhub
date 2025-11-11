@@ -7,19 +7,23 @@ import { supabase } from '@/lib/supabase'
 type DogForm = {
   name: string
   breed: string
-  age?: number | null
+  gender?: string
+  birth_date?: string
   weight_kg?: number | null
+  color?: string
+  microchip_number?: string
   notes?: string
-  diet?: string
 }
 
 const INITIAL_FORM: DogForm = {
   name: '',
   breed: '',
-  age: undefined,
+  gender: '',
+  birth_date: '',
   weight_kg: undefined,
+  color: '',
+  microchip_number: '',
   notes: '',
-  diet: '',
 }
 
 export default function NewDogScreen() {
@@ -49,13 +53,15 @@ export default function NewDogScreen() {
     const { data, error } = await supabase
       .from('doghealthy_dogs')
       .insert({
-        owner_id: session.user.id,
+        user_id: session.user.id,
         name: form.name || null,
         breed: form.breed || null,
-        age: form.age ?? null,
+        gender: form.gender || null,
+        birth_date: form.birth_date || null,
         weight_kg: form.weight_kg ?? null,
+        color: form.color || null,
+        microchip_number: form.microchip_number || null,
         notes: form.notes || null,
-        diet: form.diet || null,
       })
       .select('id')
       .maybeSingle()
@@ -99,13 +105,22 @@ export default function NewDogScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Age (years)</Text>
+        <Text style={styles.label}>Gender</Text>
         <TextInput
           style={styles.input}
-          value={form.age?.toString() ?? ''}
-          keyboardType="numeric"
-          onChangeText={(text) => updateField('age', text ? Number(text) : undefined)}
-          placeholder="Age"
+          value={form.gender ?? ''}
+          onChangeText={(text) => updateField('gender', text)}
+          placeholder="Male / Female"
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Birth date</Text>
+        <TextInput
+          style={styles.input}
+          value={form.birth_date ?? ''}
+          onChangeText={(text) => updateField('birth_date', text)}
+          placeholder="YYYY-MM-DD"
         />
       </View>
 
@@ -121,12 +136,23 @@ export default function NewDogScreen() {
       </View>
 
       <View style={styles.field}>
-        <Text style={styles.label}>Diet</Text>
+        <Text style={styles.label}>Coat colour</Text>
         <TextInput
           style={styles.input}
-          value={form.diet ?? ''}
-          onChangeText={(text) => updateField('diet', text)}
-          placeholder="Diet notes"
+          value={form.color ?? ''}
+          onChangeText={(text) => updateField('color', text)}
+          placeholder="Colour"
+        />
+      </View>
+
+      <View style={styles.field}>
+        <Text style={styles.label}>Microchip number</Text>
+        <TextInput
+          style={styles.input}
+          value={form.microchip_number ?? ''}
+          onChangeText={(text) => updateField('microchip_number', text)}
+          placeholder="Microchip number"
+          autoCapitalize="characters"
         />
       </View>
 

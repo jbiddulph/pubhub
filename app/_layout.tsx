@@ -10,15 +10,20 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="food-finder" />
-        <Stack.Screen name="classifieds" />
-        <Stack.Screen name="members" />
-        <Stack.Screen name="my-dogs/index" />
-        <Stack.Screen name="my-dogs/new" />
-        <Stack.Screen name="my-dogs/[id]" />
-        <Stack.Screen name="my-dogs/[id]/edit" />
+      <Stack
+        screenOptions={{
+          headerTintColor: '#FFFFFF',
+          headerStyle: { backgroundColor: '#2C6E49' },
+          headerTitleStyle: { fontWeight: '600' },
+        }}>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
+        <Stack.Screen name="food-finder" options={{ title: 'Food Finder', headerShown: true }} />
+        <Stack.Screen name="classifieds" options={{ title: 'Classifieds', headerShown: true }} />
+        <Stack.Screen name="members" options={{ title: 'Members', headerShown: true }} />
+        <Stack.Screen name="my-dogs/index" options={{ title: 'My Dogs', headerShown: true }} />
+        <Stack.Screen name="my-dogs/new" options={{ title: 'Add Dog', headerShown: true }} />
+        <Stack.Screen name="my-dogs/[id]" options={{ title: 'Dog Details', headerShown: true }} />
+        <Stack.Screen name="my-dogs/[id]/edit" options={{ title: 'Edit Dog', headerShown: true }} />
         <Stack.Screen
           name="modal"
           options={{ presentation: 'modal', title: 'Modal', headerShown: true }}

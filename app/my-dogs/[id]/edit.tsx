@@ -7,10 +7,12 @@ import { supabase } from '@/lib/supabase'
 type Dog = {
   name?: string | null
   breed?: string | null
-  age?: number | null
+  gender?: string | null
+  birth_date?: string | null
   weight_kg?: number | null
+  color?: string | null
+  microchip_number?: string | null
   notes?: string | null
-  diet?: string | null
 }
 
 export default function EditDogScreen() {
@@ -29,7 +31,7 @@ export default function EditDogScreen() {
     async function loadDog() {
       const { data, error } = await supabase
         .from('doghealthy_dogs')
-        .select('name, breed, age, weight_kg, notes, diet')
+        .select('name, breed, gender, birth_date, weight_kg, color, microchip_number, notes')
         .eq('id', id)
         .maybeSingle()
 
@@ -49,7 +51,18 @@ export default function EditDogScreen() {
       return
     }
     setSaving(true)
-    const { error } = await supabase.from('doghealthy_dogs').update(dog).eq('id', id)
+    const payload = {
+      name: dog.name ?? null,
+      breed: dog.breed ?? null,
+      gender: dog.gender ?? null,
+      birth_date: dog.birth_date ? dog.birth_date : null,
+      weight_kg: typeof dog.weight_kg === 'number' ? dog.weight_kg : null,
+      color: dog.color ?? null,
+      microchip_number: dog.microchip_number ?? null,
+      notes: dog.notes ?? null,
+    }
+
+    const { error } = await supabase.from('doghealthy_dogs').update(payload).eq('id', id)
 
     setSaving(false)
 
@@ -109,13 +122,21 @@ export default function EditDogScreen() {
         />
       </View>
       <View style={styles.field}>
-        <Text style={styles.label}>Age (years)</Text>
+        <Text style={styles.label}>Gender</Text>
         <TextInput
           style={styles.input}
-          value={dog.age?.toString() ?? ''}
-          keyboardType="numeric"
-          onChangeText={(text) => updateField('age', text ? Number(text) : null)}
-          placeholder="Age"
+          value={dog.gender ?? ''}
+          onChangeText={(text) => updateField('gender', text)}
+          placeholder="Male / Female"
+        />
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Birth date</Text>
+        <TextInput
+          style={styles.input}
+          value={dog.birth_date ?? ''}
+          onChangeText={(text) => updateField('birth_date', text)}
+          placeholder="YYYY-MM-DD"
         />
       </View>
       <View style={styles.field}>
@@ -129,12 +150,22 @@ export default function EditDogScreen() {
         />
       </View>
       <View style={styles.field}>
-        <Text style={styles.label}>Diet</Text>
+        <Text style={styles.label}>Coat colour</Text>
         <TextInput
           style={styles.input}
-          value={dog.diet ?? ''}
-          onChangeText={(text) => updateField('diet', text)}
-          placeholder="Diet notes"
+          value={dog.color ?? ''}
+          onChangeText={(text) => updateField('color', text)}
+          placeholder="Colour"
+        />
+      </View>
+      <View style={styles.field}>
+        <Text style={styles.label}>Microchip number</Text>
+        <TextInput
+          style={styles.input}
+          value={dog.microchip_number ?? ''}
+          onChangeText={(text) => updateField('microchip_number', text)}
+          placeholder="Microchip number"
+          autoCapitalize="characters"
         />
       </View>
       <View style={styles.field}>
