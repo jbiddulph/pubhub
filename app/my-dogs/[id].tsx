@@ -918,14 +918,18 @@ export default function DogDetailsScreen() {
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const { error: insertError } = await supabase.from('doghealthy_weight_logs').insert({
+      const insertPayload: Record<string, unknown> = {
         dog_id: id,
-        user_id: userId,
         measurement_date: toNullableString(weightForm.measurement_date),
         weight_kg: weightValue,
         notes: toNullableString(weightForm.notes),
         vet_id: weightForm.vet_id,
-      })
+      }
+      if ('user_id' in (supabase as any).schema?.public?.tables?.doghealthy_weight_logs?.columns ?? {}) {
+        insertPayload.user_id = userId
+      }
+
+      const { error: insertError } = await supabase.from('doghealthy_weight_logs').insert(insertPayload)
 
       if (insertError) {
         Alert.alert('Could not add weight entry', insertError.message)
