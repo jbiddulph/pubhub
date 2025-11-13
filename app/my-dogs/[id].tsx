@@ -2,8 +2,8 @@ import { Image } from 'expo-image'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { ReactNode, useCallback, useMemo, useState } from 'react'
 import {
-  Alert,
   ActivityIndicator,
+  Alert,
   DateTimePickerAndroid,
   KeyboardAvoidingView,
   Modal,
@@ -17,7 +17,6 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import DateTimePicker from '@react-native-community/datetimepicker'
 
 import { getPublicDogPhotoUrl } from '@/lib/storage'
 import { supabase } from '@/lib/supabase'
