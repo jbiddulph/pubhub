@@ -1,10 +1,10 @@
 import DateTimePicker, {
   DateTimePickerAndroid,
   type DateTimePickerEvent,
-} from '@react-native-community/datetimepicker'
-import { Image } from 'expo-image'
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
-import { ReactNode, useCallback, useMemo, useState } from 'react'
+} from '@react-native-community/datetimepicker';
+import { Image } from 'expo-image';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,11 +18,11 @@ import {
   Text,
   TextInput,
   View,
-} from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { getPublicDogPhotoUrl } from '@/lib/storage'
-import { supabase } from '@/lib/supabase'
+import { getPublicDogPhotoUrl } from '@/lib/storage';
+import { supabase } from '@/lib/supabase';
 
 type Dog = {
   id: string
@@ -187,38 +187,52 @@ function toNullableString(input: string) {
   return trimmed.length ? trimmed : null
 }
 
-function formatDateValue(date: Date) {
+function formatDateIso(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
 
-function formatDateTimeValue(date: Date) {
-  const datePart = formatDateValue(date)
+function formatDateTimeIso(date: Date) {
+  const base = formatDateIso(date)
   const hours = String(date.getHours()).padStart(2, '0')
   const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${datePart} ${hours}:${minutes}`
+  return `${base} ${hours}:${minutes}`
 }
 
-function parseDateInput(value: string | null | undefined, mode: 'date' | 'datetime') {
-  if (!value) return new Date()
+function parseDateValue(value: string | null | undefined, mode: 'date' | 'datetime') {
+  if (!value) {
+    return new Date()
+  }
   const trimmed = value.trim()
-  if (!trimmed) return new Date()
+  if (!trimmed) {
+    return new Date()
+  }
+
   const [datePart, timePart] = trimmed.split(/[T ]/)
   const [yearStr, monthStr, dayStr] = (datePart ?? '').split('-')
   const year = Number(yearStr)
   const month = Number(monthStr)
   const day = Number(dayStr)
+
   if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
     return new Date()
   }
+
   if (mode === 'datetime' && timePart) {
     const [hourStr, minuteStr] = timePart.split(':')
     const hours = Number(hourStr)
     const minutes = Number(minuteStr)
-    return new Date(year, (month || 1) - 1, day || 1, Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0)
+    return new Date(
+      year,
+      (month || 1) - 1,
+      day || 1,
+      Number.isFinite(hours) ? hours : 0,
+      Number.isFinite(minutes) ? minutes : 0,
+    )
   }
+
   return new Date(year, (month || 1) - 1, day || 1)
 }
 
@@ -399,6 +413,147 @@ function SectionAccordion({
   )
 }
 
+type DateInputProps = {
+  value: string
+  placeholder: string
+  mode?: 'date' | 'datetime'
+  onChange: (value: string) => void
+}
+
+function DateInput({ value, placeholder, mode = 'date', onChange }: DateInputProps) {
+  const [show, setShow] = useState(false)
+  const [internalDate, setInternalDate] = useState(() => parseDateValue(value, mode))
+  const [pendingDate, setPendingDate] = useState(() => parseDateValue(value, mode))
+  const insets = useSafeAreaInsets()
+
+  useEffect(() => {
+    const parsed = parseDateValue(value, mode)
+    setInternalDate(parsed)
+    setPendingDate(parsed)
+  }, [value, mode])
+
+  if (Platform.OS === 'web') {
+    return (
+      <TextInput
+        style={styles.modalInput}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder}
+        inputMode="numeric"
+      />
+    )
+  }
+
+  const applyChange = useCallback(
+    (selectedDate: Date) => {
+      setInternalDate(selectedDate)
+      const formatted = mode === 'datetime' ? formatDateTimeIso(selectedDate) : formatDateIso(selectedDate)
+      onChange(formatted)
+    },
+    [mode, onChange],
+  )
+
+  const handlePress = useCallback(() => {
+    if (Platform.OS === 'android') {
+      const openTimePicker = (baseDate: Date) => {
+        DateTimePickerAndroid.open({
+          value: baseDate,
+          mode: 'time',
+          onChange: (event, selectedTime) => {
+            if (event.type !== 'set' || !selectedTime) return
+            const combined = new Date(baseDate)
+            combined.setHours(selectedTime.getHours())
+            combined.setMinutes(selectedTime.getMinutes())
+            applyChange(combined)
+          },
+        })
+      }
+
+      DateTimePickerAndroid.open({
+        value: internalDate,
+        mode: 'date',
+        display: 'default',
+        onChange: (event, selectedDate) => {
+          if (event.type !== 'set' || !selectedDate) return
+          if (mode === 'datetime') {
+            openTimePicker(selectedDate)
+          } else {
+            applyChange(selectedDate)
+          }
+        },
+      })
+      return
+    }
+    setPendingDate(internalDate)
+    setShow(true)
+  }, [applyChange, internalDate, mode])
+
+  const handleChange = useCallback(
+    (_event: DateTimePickerEvent, selectedDate?: Date) => {
+      if (!selectedDate) return
+      if (Platform.OS === 'ios') {
+        setPendingDate(selectedDate)
+      }
+    },
+    [],
+  )
+
+  const displayValue = value
+    ? mode === 'datetime'
+      ? internalDate.toLocaleString()
+      : internalDate.toLocaleDateString()
+    : placeholder
+  const textStyle = value ? styles.modalDateText : styles.modalDatePlaceholder
+
+  const handleCancel = useCallback(() => {
+    setShow(false)
+  }, [])
+
+  const handleConfirm = useCallback(() => {
+    setShow(false)
+    applyChange(pendingDate)
+  }, [applyChange, pendingDate])
+
+  return (
+    <>
+      <Pressable style={styles.modalDateButton} onPress={handlePress}>
+        <Text style={textStyle}>{displayValue}</Text>
+      </Pressable>
+      {Platform.OS === 'ios' && show ? (
+        <Modal
+          transparent
+          visible
+          animationType="fade"
+          presentationStyle="overFullScreen"
+          statusBarTranslucent
+          onRequestClose={handleCancel}
+        >
+          <View style={styles.dateOverlayRoot}>
+            <Pressable style={styles.dateOverlayBackdrop} onPress={handleCancel} />
+            <View style={[styles.dateModalContainer, { paddingBottom: insets.bottom + 24 }]}>
+              <DateTimePicker
+                value={pendingDate}
+                mode={mode}
+                display="spinner"
+                onChange={handleChange}
+                style={styles.datePickerControl}
+              />
+              <View style={styles.dateModalActions}>
+                <Pressable style={styles.dateModalActionButton} onPress={handleCancel}>
+                  <Text style={styles.dateModalActionLabel}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.dateModalActionButton} onPress={handleConfirm}>
+                  <Text style={styles.dateModalActionLabel}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
+    </>
+  )
+}
+
 export default function DogDetailsScreen() {
   const router = useRouter()
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -446,67 +601,6 @@ export default function DogDetailsScreen() {
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null)
   const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null)
   const [editingWeightId, setEditingWeightId] = useState<string | null>(null)
-  const [iosPickerState, setIosPickerState] = useState<{
-    visible: boolean
-    mode: 'date' | 'datetime'
-    date: Date
-    onConfirm: (value: string) => void
-  } | null>(null)
-  const [iosTempDate, setIosTempDate] = useState<Date>(new Date())
-
-  const openDatePicker = useCallback(
-    (currentValue: string | null, mode: 'date' | 'datetime', onConfirm: (value: string) => void) => {
-      const initialDate = parseDateInput(currentValue, mode)
-      if (Platform.OS === 'android') {
-        DateTimePickerAndroid.open({
-          value: initialDate,
-          mode: 'date',
-          onChange: (event: DateTimePickerEvent, selectedDate?: Date) => {
-            if (event.type !== 'set' || !selectedDate) return
-            const pickedDate = selectedDate
-            if (mode === 'datetime') {
-              DateTimePickerAndroid.open({
-                value: pickedDate,
-                mode: 'time',
-                onChange: (eventTime: DateTimePickerEvent, selectedTime?: Date) => {
-                  if (eventTime.type !== 'set' || !selectedTime) return
-                  const combined = new Date(pickedDate)
-                  combined.setHours(selectedTime.getHours())
-                  combined.setMinutes(selectedTime.getMinutes())
-                  onConfirm(formatDateTimeValue(combined))
-                },
-              })
-            } else {
-              onConfirm(formatDateValue(pickedDate))
-            }
-          },
-        })
-      } else {
-        setIosTempDate(initialDate)
-        setIosPickerState({
-          visible: true,
-          mode,
-          date: initialDate,
-          onConfirm,
-        })
-      }
-    },
-    [],
-  )
-
-  const closeIosPicker = useCallback(() => {
-    setIosPickerState(null)
-  }, [])
-
-  const confirmIosPicker = useCallback(() => {
-    if (!iosPickerState) return
-    const formatted =
-      iosPickerState.mode === 'datetime'
-        ? formatDateTimeValue(iosTempDate)
-        : formatDateValue(iosTempDate)
-    iosPickerState.onConfirm(formatted)
-    setIosPickerState(null)
-  }, [iosPickerState, iosTempDate])
 
   function beginEditHealth(record: HealthRecord) {
     setEditingHealthId(record.id)
@@ -603,6 +697,86 @@ export default function DogDetailsScreen() {
     Alert.alert(successMessage)
   }
 
+  function confirmDeleteHealth(recordId: string) {
+    Alert.alert('Delete health record?', 'This will permanently remove this health record.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          deleteRecord(
+            'doghealthy_health_records',
+            recordId,
+            'Health record deleted.',
+            'health',
+          ),
+      },
+    ])
+  }
+
+  function confirmDeleteVaccination(recordId: string) {
+    Alert.alert('Delete vaccination?', 'This will permanently remove this vaccination entry.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          deleteRecord(
+            'doghealthy_vaccinations',
+            recordId,
+            'Vaccination deleted.',
+            'vaccinations',
+          ),
+      },
+    ])
+  }
+
+  function confirmDeleteMedication(recordId: string) {
+    Alert.alert('Delete medication?', 'This will permanently remove this medication entry.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          deleteRecord(
+            'doghealthy_medications',
+            recordId,
+            'Medication deleted.',
+            'medications',
+          ),
+      },
+    ])
+  }
+
+  function confirmDeleteAppointment(recordId: string) {
+    Alert.alert('Delete appointment?', 'This will permanently remove this appointment.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          deleteRecord(
+            'doghealthy_appointments',
+            recordId,
+            'Appointment deleted.',
+            'appointments',
+          ),
+      },
+    ])
+  }
+
+  function confirmDeleteWeight(recordId: string) {
+    Alert.alert('Delete weight entry?', 'This will permanently remove this weight entry.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () =>
+          deleteRecord('doghealthy_weight_logs', recordId, 'Weight entry deleted.', 'weight'),
+      },
+    ])
+  }
+
   const vetLookup = useMemo(() => {
     return vets.reduce<Record<string, Vet>>((acc, vet) => {
       if (vet.id) {
@@ -618,10 +792,6 @@ export default function DogDetailsScreen() {
   const modalHeaderStyle = useMemo(
     () => [styles.modalHeader, { paddingTop: insets.top + 12 }],
     [insets.top],
-  )
-  const iosPickerContainerStyle = useMemo(
-    () => [styles.dateModalContainer, { paddingBottom: insets.bottom + 16 }],
-    [insets.bottom],
   )
   function toggleSection(key: SectionKey) {
     setExpandedSection((current) => (current === key ? null : key))
@@ -899,19 +1069,18 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingHealth(true)
+      const isEditing = Boolean(editingHealthId)
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
       if (!session) {
         setSavingHealth(false)
-        Alert.alert('Add health record', 'Please sign in again to continue.')
+        Alert.alert(isEditing ? 'Edit health record' : 'Add health record', 'Please sign in again to continue.')
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const { error: insertError } = await supabase.from('doghealthy_health_records').insert({
-        dog_id: id,
-        user_id: userId,
+      const payload = {
         record_date: toNullableString(healthForm.record_date),
         record_type: toNullableString(healthForm.record_type),
         title: toNullableString(healthForm.title),
@@ -923,10 +1092,28 @@ export default function DogDetailsScreen() {
         cost: toNullableNumber(healthForm.cost),
         notes: toNullableString(healthForm.notes),
         vet_id: healthForm.vet_id,
-      })
+      }
+      let error = null
+      if (isEditing && editingHealthId) {
+        const { error: updateError } = await supabase
+          .from('doghealthy_health_records')
+          .update(payload)
+          .eq('id', editingHealthId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase.from('doghealthy_health_records').insert({
+          dog_id: id,
+          user_id: userId,
+          ...payload,
+        })
+        error = insertError
+      }
 
-      if (insertError) {
-        Alert.alert('Could not add health record', insertError.message)
+      if (error) {
+        Alert.alert(
+          isEditing ? 'Could not update health record' : 'Could not add health record',
+          error.message,
+        )
         return
       }
 
@@ -934,10 +1121,16 @@ export default function DogDetailsScreen() {
       setHealthForm({ ...INITIAL_HEALTH_FORM })
       await fetchData()
       setExpandedSection('health')
-      Alert.alert('Health record added', 'The health record has been saved.')
+      Alert.alert(
+        isEditing ? 'Health record updated' : 'Health record added',
+        isEditing ? 'The health record has been updated.' : 'The health record has been saved.',
+      )
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
-      Alert.alert('Could not add health record', message)
+      Alert.alert(
+        editingHealthId ? 'Could not update health record' : 'Could not add health record',
+        message,
+      )
     } finally {
       setSavingHealth(false)
     }
@@ -956,19 +1149,18 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingVaccination(true)
+      const isEditing = Boolean(editingVaccinationId)
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
       if (!session) {
         setSavingVaccination(false)
-        Alert.alert('Add vaccination', 'Please sign in again to continue.')
+        Alert.alert(isEditing ? 'Edit vaccination' : 'Add vaccination', 'Please sign in again to continue.')
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const { error: insertError } = await supabase.from('doghealthy_vaccinations').insert({
-        dog_id: id,
-        user_id: userId,
+      const payload = {
         vaccine_name: toNullableString(vaccinationForm.vaccine_name),
         vaccine_type: toNullableString(vaccinationForm.vaccine_type),
         vaccination_date: toNullableString(vaccinationForm.vaccination_date),
@@ -978,10 +1170,29 @@ export default function DogDetailsScreen() {
         cost: toNullableNumber(vaccinationForm.cost),
         notes: toNullableString(vaccinationForm.notes),
         vet_id: vaccinationForm.vet_id,
-      })
+      }
 
-      if (insertError) {
-        Alert.alert('Could not add vaccination', insertError.message)
+      let error = null
+      if (isEditing && editingVaccinationId) {
+        const { error: updateError } = await supabase
+          .from('doghealthy_vaccinations')
+          .update(payload)
+          .eq('id', editingVaccinationId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase.from('doghealthy_vaccinations').insert({
+          dog_id: id,
+          user_id: userId,
+          ...payload,
+        })
+        error = insertError
+      }
+
+      if (error) {
+        Alert.alert(
+          isEditing ? 'Could not update vaccination' : 'Could not add vaccination',
+          error.message,
+        )
         return
       }
 
@@ -989,10 +1200,16 @@ export default function DogDetailsScreen() {
       setVaccinationForm({ ...INITIAL_VACCINATION_FORM })
       await fetchData()
       setExpandedSection('vaccinations')
-      Alert.alert('Vaccination added', 'The vaccination record has been saved.')
+      Alert.alert(
+        isEditing ? 'Vaccination updated' : 'Vaccination added',
+        isEditing ? 'The vaccination has been updated.' : 'The vaccination record has been saved.',
+      )
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
-      Alert.alert('Could not add vaccination', message)
+      Alert.alert(
+        editingVaccinationId ? 'Could not update vaccination' : 'Could not add vaccination',
+        message,
+      )
     } finally {
       setSavingVaccination(false)
     }
@@ -1011,19 +1228,18 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingMedication(true)
+      const isEditing = Boolean(editingMedicationId)
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
       if (!session) {
         setSavingMedication(false)
-        Alert.alert('Add medication', 'Please sign in again to continue.')
+        Alert.alert(isEditing ? 'Edit medication' : 'Add medication', 'Please sign in again to continue.')
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const { error: insertError } = await supabase.from('doghealthy_medications').insert({
-        dog_id: id,
-        user_id: userId,
+      const payload = {
         medication_name: toNullableString(medicationForm.medication_name),
         dosage: toNullableString(medicationForm.dosage),
         frequency: toNullableString(medicationForm.frequency),
@@ -1036,10 +1252,28 @@ export default function DogDetailsScreen() {
         notes: toNullableString(medicationForm.notes),
         is_active: medicationForm.is_active,
         vet_id: medicationForm.vet_id,
-      })
+      }
+      let error = null
+      if (isEditing && editingMedicationId) {
+        const { error: updateError } = await supabase
+          .from('doghealthy_medications')
+          .update(payload)
+          .eq('id', editingMedicationId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase.from('doghealthy_medications').insert({
+          dog_id: id,
+          user_id: userId,
+          ...payload,
+        })
+        error = insertError
+      }
 
-      if (insertError) {
-        Alert.alert('Could not add medication', insertError.message)
+      if (error) {
+        Alert.alert(
+          isEditing ? 'Could not update medication' : 'Could not add medication',
+          error.message,
+        )
         return
       }
 
@@ -1047,10 +1281,16 @@ export default function DogDetailsScreen() {
       setMedicationForm({ ...INITIAL_MEDICATION_FORM })
       await fetchData()
       setExpandedSection('medications')
-      Alert.alert('Medication added', 'The medication record has been saved.')
+      Alert.alert(
+        isEditing ? 'Medication updated' : 'Medication added',
+        isEditing ? 'The medication has been updated.' : 'The medication record has been saved.',
+      )
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
-      Alert.alert('Could not add medication', message)
+      Alert.alert(
+        editingMedicationId ? 'Could not update medication' : 'Could not add medication',
+        message,
+      )
     } finally {
       setSavingMedication(false)
     }
@@ -1069,19 +1309,18 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingAppointment(true)
+      const isEditing = Boolean(editingAppointmentId)
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
       if (!session) {
         setSavingAppointment(false)
-        Alert.alert('Add appointment', 'Please sign in again to continue.')
+        Alert.alert(isEditing ? 'Edit appointment' : 'Add appointment', 'Please sign in again to continue.')
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const { error: insertError } = await supabase.from('doghealthy_appointments').insert({
-        dog_id: id,
-        user_id: userId,
+      const payload = {
         appointment_date: toNullableString(appointmentForm.appointment_date),
         appointment_type: toNullableString(appointmentForm.appointment_type),
         title: toNullableString(appointmentForm.title),
@@ -1093,10 +1332,29 @@ export default function DogDetailsScreen() {
         status: toNullableString(appointmentForm.status),
         notes: toNullableString(appointmentForm.notes),
         vet_id: appointmentForm.vet_id,
-      })
+      }
 
-      if (insertError) {
-        Alert.alert('Could not add appointment', insertError.message)
+      let error = null
+      if (isEditing && editingAppointmentId) {
+        const { error: updateError } = await supabase
+          .from('doghealthy_appointments')
+          .update(payload)
+          .eq('id', editingAppointmentId)
+        error = updateError
+      } else {
+        const { error: insertError } = await supabase.from('doghealthy_appointments').insert({
+          dog_id: id,
+          user_id: userId,
+          ...payload,
+        })
+        error = insertError
+      }
+
+      if (error) {
+        Alert.alert(
+          isEditing ? 'Could not update appointment' : 'Could not add appointment',
+          error.message,
+        )
         return
       }
 
@@ -1104,10 +1362,16 @@ export default function DogDetailsScreen() {
       setAppointmentForm({ ...INITIAL_APPOINTMENT_FORM })
       await fetchData()
       setExpandedSection('appointments')
-      Alert.alert('Appointment added', 'The appointment has been saved.')
+      Alert.alert(
+        isEditing ? 'Appointment updated' : 'Appointment added',
+        isEditing ? 'The appointment has been updated.' : 'The appointment has been saved.',
+      )
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
-      Alert.alert('Could not add appointment', message)
+      Alert.alert(
+        editingAppointmentId ? 'Could not update appointment' : 'Could not add appointment',
+        message,
+      )
     } finally {
       setSavingAppointment(false)
     }
@@ -1117,7 +1381,7 @@ export default function DogDetailsScreen() {
     if (!id) return
     const weightValue = toNullableNumber(weightForm.weight_kg)
     if (weightValue === null) {
-      Alert.alert('Add weight log', 'Please enter your dog’s weight in kilograms.')
+      Alert.alert('Add weight log', "Please enter your dog's weight in kilograms.")
       return
     }
     if (!weightForm.vet_id) {
@@ -1127,33 +1391,50 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingWeight(true)
+      const isEditing = Boolean(editingWeightId)
       const {
         data: { session },
       } = await supabase.auth.getSession()
 
       if (!session) {
         setSavingWeight(false)
-        Alert.alert('Add weight entry', 'Please sign in again to continue.')
+        Alert.alert(isEditing ? 'Edit weight entry' : 'Add weight entry', 'Please sign in again to continue.')
         return
       }
       const userId = dog?.user_id ?? session.user.id
-      const insertPayload: Record<string, unknown> = {
-        dog_id: id,
+      const basePayload: Record<string, unknown> = {
         measurement_date: toNullableString(weightForm.measurement_date),
         weight_kg: weightValue,
         notes: toNullableString(weightForm.notes),
         vet_id: weightForm.vet_id,
       }
-      const weightLogsColumns =
-        (supabase as any)?.schema?.public?.tables?.doghealthy_weight_logs?.columns
-      if (weightLogsColumns && 'user_id' in weightLogsColumns) {
-        insertPayload.user_id = userId
+
+      let error = null
+      if (isEditing && editingWeightId) {
+        const { error: updateError } = await supabase
+          .from('doghealthy_weight_logs')
+          .update(basePayload)
+          .eq('id', editingWeightId)
+        error = updateError
+      } else {
+        const insertPayload: Record<string, unknown> = {
+          dog_id: id,
+          ...basePayload,
+        }
+        const weightLogsColumns =
+          (supabase as any)?.schema?.public?.tables?.doghealthy_weight_logs?.columns
+        if (weightLogsColumns && 'user_id' in weightLogsColumns) {
+          insertPayload.user_id = userId
+        }
+        const { error: insertError } = await supabase.from('doghealthy_weight_logs').insert(insertPayload)
+        error = insertError
       }
 
-      const { error: insertError } = await supabase.from('doghealthy_weight_logs').insert(insertPayload)
-
-      if (insertError) {
-        Alert.alert('Could not add weight entry', insertError.message)
+      if (error) {
+        Alert.alert(
+          isEditing ? 'Could not update weight entry' : 'Could not add weight entry',
+          error.message,
+        )
         return
       }
 
@@ -1161,10 +1442,16 @@ export default function DogDetailsScreen() {
       setWeightForm({ ...INITIAL_WEIGHT_FORM })
       await fetchData()
       setExpandedSection('weight')
-      Alert.alert('Weight entry added', 'The weight entry has been saved.')
+      Alert.alert(
+        isEditing ? 'Weight entry updated' : 'Weight entry added',
+        isEditing ? 'The weight entry has been updated.' : 'The weight entry has been saved.',
+      )
     } catch (formError) {
       const message = formError instanceof Error ? formError.message : 'Something went wrong.'
-      Alert.alert('Could not add weight entry', message)
+      Alert.alert(
+        editingWeightId ? 'Could not update weight entry' : 'Could not add weight entry',
+        message,
+      )
     } finally {
       setSavingWeight(false)
     }
@@ -1188,6 +1475,12 @@ export default function DogDetailsScreen() {
 
   const dogWeight = parseNumeric(dog.weight_kg)
   const photoUri = getPublicDogPhotoUrl(dog.photo_url)
+
+  const isEditingHealth = Boolean(editingHealthId)
+  const isEditingVaccination = Boolean(editingVaccinationId)
+  const isEditingMedication = Boolean(editingMedicationId)
+  const isEditingAppointment = Boolean(editingAppointmentId)
+  const isEditingWeight = Boolean(editingWeightId)
 
   return (
     <>
@@ -1241,6 +1534,7 @@ export default function DogDetailsScreen() {
 
       <SectionAccordion
         title="Health Records"
+        count={healthRecords.length}
         expanded={expandedSection === 'health'}
         onToggle={() => toggleSection('health')}
         onAdd={openHealthModal}
@@ -1252,7 +1546,20 @@ export default function DogDetailsScreen() {
           const vet = record.vet_id ? vetLookup[record.vet_id] : undefined
           return (
             <View key={record.id} style={styles.card}>
-              <Text style={styles.cardTitle}>{record.title ?? 'Health record'}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{record.title ?? 'Health record'}</Text>
+                <View style={styles.cardActions}>
+                  <Pressable style={styles.cardActionButton} onPress={() => beginEditHealth(record)}>
+                    <Text style={styles.cardActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => confirmDeleteHealth(record.id)}
+                  >
+                    <Text style={[styles.cardActionText, styles.cardActionDelete]}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
               <Text style={styles.cardMeta}>
                 {formatDate(record.record_date) ?? 'Date unknown'} · {record.record_type ?? 'General'}
               </Text>
@@ -1287,6 +1594,7 @@ export default function DogDetailsScreen() {
 
       <SectionAccordion
         title="Vaccinations"
+        count={vaccinations.length}
         expanded={expandedSection === 'vaccinations'}
         onToggle={() => toggleSection('vaccinations')}
         onAdd={openVaccinationModal}
@@ -1298,7 +1606,23 @@ export default function DogDetailsScreen() {
           const vet = vaccination.vet_id ? vetLookup[vaccination.vet_id] : undefined
           return (
             <View key={vaccination.id} style={styles.card}>
-              <Text style={styles.cardTitle}>{vaccination.vaccine_name ?? 'Vaccination'}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{vaccination.vaccine_name ?? 'Vaccination'}</Text>
+                <View style={styles.cardActions}>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => beginEditVaccination(vaccination)}
+                  >
+                    <Text style={styles.cardActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => confirmDeleteVaccination(vaccination.id)}
+                  >
+                    <Text style={styles.cardActionText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
               <Text style={styles.cardMeta}>
                 {formatDate(vaccination.vaccination_date) ?? 'Date unknown'}
                 {vaccination.vaccine_type ? ` • ${vaccination.vaccine_type}` : ''}
@@ -1332,6 +1656,7 @@ export default function DogDetailsScreen() {
 
       <SectionAccordion
         title="Medications"
+        count={medications.length}
         expanded={expandedSection === 'medications'}
         onToggle={() => toggleSection('medications')}
         onAdd={openMedicationModal}
@@ -1343,7 +1668,23 @@ export default function DogDetailsScreen() {
           const vet = medication.vet_id ? vetLookup[medication.vet_id] : undefined
           return (
             <View key={medication.id} style={styles.card}>
-              <Text style={styles.cardTitle}>{medication.medication_name ?? 'Medication'}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{medication.medication_name ?? 'Medication'}</Text>
+                <View style={styles.cardActions}>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => beginEditMedication(medication)}
+                  >
+                    <Text style={styles.cardActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => confirmDeleteMedication(medication.id)}
+                  >
+                    <Text style={styles.cardActionText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
               <Text style={styles.cardMeta}>
                 {medication.dosage ?? 'Dosage n/a'}
                 {medication.frequency ? ` • ${medication.frequency}` : ''}
@@ -1381,6 +1722,7 @@ export default function DogDetailsScreen() {
 
       <SectionAccordion
         title="Appointments"
+        count={appointments.length}
         expanded={expandedSection === 'appointments'}
         onToggle={() => toggleSection('appointments')}
         onAdd={openAppointmentModal}
@@ -1392,7 +1734,23 @@ export default function DogDetailsScreen() {
           const vet = appointment.vet_id ? vetLookup[appointment.vet_id] : undefined
           return (
             <View key={appointment.id} style={styles.card}>
-              <Text style={styles.cardTitle}>{appointment.title ?? 'Appointment'}</Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>{appointment.title ?? 'Appointment'}</Text>
+                <View style={styles.cardActions}>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => beginEditAppointment(appointment)}
+                  >
+                    <Text style={styles.cardActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => confirmDeleteAppointment(appointment.id)}
+                  >
+                    <Text style={styles.cardActionText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
               <Text style={styles.cardMeta}>
                 {formatDateTime(appointment.appointment_date) ?? 'Date/time n/a'}
               </Text>
@@ -1430,6 +1788,7 @@ export default function DogDetailsScreen() {
 
       <SectionAccordion
         title="Weight Logs"
+        count={weightLogs.length}
         expanded={expandedSection === 'weight'}
         onToggle={() => toggleSection('weight')}
         onAdd={openWeightModal}
@@ -1442,9 +1801,22 @@ export default function DogDetailsScreen() {
           const vet = log.vet_id ? vetLookup[log.vet_id] : undefined
           return (
             <View key={log.id} style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {formatDate(log.measurement_date) ?? 'Measurement date n/a'}
-              </Text>
+              <View style={styles.cardHeader}>
+                <Text style={styles.cardTitle}>
+                  {formatDate(log.measurement_date) ?? 'Measurement date n/a'}
+                </Text>
+                <View style={styles.cardActions}>
+                  <Pressable style={styles.cardActionButton} onPress={() => beginEditWeight(log)}>
+                    <Text style={styles.cardActionText}>Edit</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.cardActionButton}
+                    onPress={() => confirmDeleteWeight(log.id)}
+                  >
+                    <Text style={styles.cardActionText}>Delete</Text>
+                  </Pressable>
+                </View>
+              </View>
               <Text style={styles.cardMeta}>
                 Weight: {weightValue !== null ? `${weightValue} kg` : 'Unknown'}
               </Text>
@@ -1474,7 +1846,9 @@ export default function DogDetailsScreen() {
             <View style={styles.modalHeaderSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>Add Health Record</Text>
+            <Text style={styles.modalTitle}>
+              {isEditingHealth ? 'Edit Health Record' : 'Add Health Record'}
+            </Text>
             <View style={styles.modalField}>
               <Text style={styles.modalLabel}>Veterinarian</Text>
               <View style={styles.selector}>
@@ -1498,22 +1872,12 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setHealthForm((prev) => ({ ...prev, record_type: text }))}
               placeholder="Record type"
             />
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(healthForm.record_date || null, 'date', (selected) =>
-                  setHealthForm((prev) => ({ ...prev, record_date: selected })),
-                )
-              }
-            >
-              <Text
-                style={
-                  healthForm.record_date ? styles.modalDateText : styles.modalDatePlaceholder
-                }
-              >
-                {healthForm.record_date || 'Record date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
+            <DateInput
+              value={healthForm.record_date}
+              placeholder="Record date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) => setHealthForm((prev) => ({ ...prev, record_date: selected }))}
+            />
             <TextInput
               style={styles.modalInput}
               value={healthForm.veterinarian_name}
@@ -1570,7 +1934,9 @@ export default function DogDetailsScreen() {
                 onPress={handleSubmitHealth}
                 disabled={savingHealth}
               >
-                <Text style={styles.modalPrimaryLabel}>{savingHealth ? 'Saving…' : 'Save Record'}</Text>
+                <Text style={styles.modalPrimaryLabel}>
+                  {savingHealth ? 'Saving…' : isEditingHealth ? 'Update Record' : 'Save Record'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -1590,7 +1956,9 @@ export default function DogDetailsScreen() {
             <View style={styles.modalHeaderSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>Add Vaccination</Text>
+            <Text style={styles.modalTitle}>
+              {isEditingVaccination ? 'Edit Vaccination' : 'Add Vaccination'}
+            </Text>
             <View style={styles.modalField}>
               <Text style={styles.modalLabel}>Veterinarian</Text>
               <View style={styles.selector}>
@@ -1614,42 +1982,22 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setVaccinationForm((prev) => ({ ...prev, vaccine_type: text }))}
               placeholder="Vaccine type"
             />
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(vaccinationForm.vaccination_date || null, 'date', (selected) =>
-                  setVaccinationForm((prev) => ({ ...prev, vaccination_date: selected })),
-                )
+            <DateInput
+              value={vaccinationForm.vaccination_date}
+              placeholder="Vaccination date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) =>
+                setVaccinationForm((prev) => ({ ...prev, vaccination_date: selected }))
               }
-            >
-              <Text
-                style={
-                  vaccinationForm.vaccination_date
-                    ? styles.modalDateText
-                    : styles.modalDatePlaceholder
-                }
-              >
-                {vaccinationForm.vaccination_date || 'Vaccination date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(vaccinationForm.next_due_date || null, 'date', (selected) =>
-                  setVaccinationForm((prev) => ({ ...prev, next_due_date: selected })),
-                )
+            />
+            <DateInput
+              value={vaccinationForm.next_due_date}
+              placeholder="Next due date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) =>
+                setVaccinationForm((prev) => ({ ...prev, next_due_date: selected }))
               }
-            >
-              <Text
-                style={
-                  vaccinationForm.next_due_date
-                    ? styles.modalDateText
-                    : styles.modalDatePlaceholder
-                }
-              >
-                {vaccinationForm.next_due_date || 'Next due date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
+            />
             <TextInput
               style={styles.modalInput}
               value={vaccinationForm.veterinarian_name}
@@ -1685,7 +2033,9 @@ export default function DogDetailsScreen() {
                 onPress={handleSubmitVaccination}
                 disabled={savingVaccination}
               >
-                <Text style={styles.modalPrimaryLabel}>{savingVaccination ? 'Saving…' : 'Save Record'}</Text>
+                <Text style={styles.modalPrimaryLabel}>
+                  {savingVaccination ? 'Saving…' : isEditingVaccination ? 'Update Record' : 'Save Record'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -1705,7 +2055,9 @@ export default function DogDetailsScreen() {
             <View style={styles.modalHeaderSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>Add Medication</Text>
+            <Text style={styles.modalTitle}>
+              {isEditingMedication ? 'Edit Medication' : 'Add Medication'}
+            </Text>
             <View style={styles.modalField}>
               <Text style={styles.modalLabel}>Veterinarian</Text>
               <View style={styles.selector}>
@@ -1735,38 +2087,18 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setMedicationForm((prev) => ({ ...prev, frequency: text }))}
               placeholder="Frequency"
             />
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(medicationForm.start_date || null, 'date', (selected) =>
-                  setMedicationForm((prev) => ({ ...prev, start_date: selected })),
-                )
-              }
-            >
-              <Text
-                style={
-                  medicationForm.start_date ? styles.modalDateText : styles.modalDatePlaceholder
-                }
-              >
-                {medicationForm.start_date || 'Start date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(medicationForm.end_date || null, 'date', (selected) =>
-                  setMedicationForm((prev) => ({ ...prev, end_date: selected })),
-                )
-              }
-            >
-              <Text
-                style={
-                  medicationForm.end_date ? styles.modalDateText : styles.modalDatePlaceholder
-                }
-              >
-                {medicationForm.end_date || 'End date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
+            <DateInput
+              value={medicationForm.start_date}
+              placeholder="Start date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) => setMedicationForm((prev) => ({ ...prev, start_date: selected }))}
+            />
+            <DateInput
+              value={medicationForm.end_date}
+              placeholder="End date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) => setMedicationForm((prev) => ({ ...prev, end_date: selected }))}
+            />
             <TextInput
               style={styles.modalInput}
               value={medicationForm.prescribed_by}
@@ -1819,7 +2151,9 @@ export default function DogDetailsScreen() {
                 onPress={handleSubmitMedication}
                 disabled={savingMedication}
               >
-                <Text style={styles.modalPrimaryLabel}>{savingMedication ? 'Saving…' : 'Save Record'}</Text>
+                <Text style={styles.modalPrimaryLabel}>
+                  {savingMedication ? 'Saving…' : isEditingMedication ? 'Update Record' : 'Save Record'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -1839,7 +2173,9 @@ export default function DogDetailsScreen() {
             <View style={styles.modalHeaderSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>Add Appointment</Text>
+            <Text style={styles.modalTitle}>
+              {isEditingAppointment ? 'Edit Appointment' : 'Add Appointment'}
+            </Text>
             <View style={styles.modalField}>
               <Text style={styles.modalLabel}>Veterinarian</Text>
               <View style={styles.selector}>
@@ -1863,24 +2199,14 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setAppointmentForm((prev) => ({ ...prev, appointment_type: text }))}
               placeholder="Appointment type"
             />
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(appointmentForm.appointment_date || null, 'datetime', (selected) =>
-                  setAppointmentForm((prev) => ({ ...prev, appointment_date: selected })),
-                )
+            <DateInput
+              value={appointmentForm.appointment_date}
+              placeholder="Appointment date & time (YYYY-MM-DD HH:MM)"
+              mode="datetime"
+              onChange={(selected) =>
+                setAppointmentForm((prev) => ({ ...prev, appointment_date: selected }))
               }
-            >
-              <Text
-                style={
-                  appointmentForm.appointment_date
-                    ? styles.modalDateText
-                    : styles.modalDatePlaceholder
-                }
-              >
-                {appointmentForm.appointment_date || 'Appointment date & time'}
-              </Text>
-            </Pressable>
+            />
             <TextInput
               style={styles.modalInput}
               value={appointmentForm.location}
@@ -1935,7 +2261,9 @@ export default function DogDetailsScreen() {
                 onPress={handleSubmitAppointment}
                 disabled={savingAppointment}
               >
-                <Text style={styles.modalPrimaryLabel}>{savingAppointment ? 'Saving…' : 'Save Appointment'}</Text>
+                <Text style={styles.modalPrimaryLabel}>
+                  {savingAppointment ? 'Saving…' : isEditingAppointment ? 'Update Appointment' : 'Save Appointment'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
@@ -1955,7 +2283,9 @@ export default function DogDetailsScreen() {
             <View style={styles.modalHeaderSpacer} />
           </View>
           <ScrollView contentContainerStyle={styles.modalContent} keyboardShouldPersistTaps="handled">
-            <Text style={styles.modalTitle}>Add Weight Entry</Text>
+            <Text style={styles.modalTitle}>
+              {isEditingWeight ? 'Edit Weight Entry' : 'Add Weight Entry'}
+            </Text>
             <View style={styles.modalField}>
               <Text style={styles.modalLabel}>Veterinarian</Text>
               <View style={styles.selector}>
@@ -1974,24 +2304,14 @@ export default function DogDetailsScreen() {
               placeholder="Weight (kg)"
               keyboardType="decimal-pad"
             />
-            <Pressable
-              style={styles.modalDateButton}
-              onPress={() =>
-                openDatePicker(weightForm.measurement_date || null, 'date', (selected) =>
-                  setWeightForm((prev) => ({ ...prev, measurement_date: selected })),
-                )
+            <DateInput
+              value={weightForm.measurement_date}
+              placeholder="Measurement date (YYYY-MM-DD)"
+              mode="date"
+              onChange={(selected) =>
+                setWeightForm((prev) => ({ ...prev, measurement_date: selected }))
               }
-            >
-              <Text
-                style={
-                  weightForm.measurement_date
-                    ? styles.modalDateText
-                    : styles.modalDatePlaceholder
-                }
-              >
-                {weightForm.measurement_date || 'Measurement date (YYYY-MM-DD)'}
-              </Text>
-            </Pressable>
+            />
             <TextInput
               style={[styles.modalInput, styles.modalMultiline]}
               value={weightForm.notes}
@@ -2008,48 +2328,15 @@ export default function DogDetailsScreen() {
                 onPress={handleSubmitWeight}
                 disabled={savingWeight}
               >
-                <Text style={styles.modalPrimaryLabel}>{savingWeight ? 'Saving…' : 'Save Entry'}</Text>
+                <Text style={styles.modalPrimaryLabel}>
+                  {savingWeight ? 'Saving…' : isEditingWeight ? 'Update Entry' : 'Save Entry'}
+                </Text>
               </Pressable>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
       </Modal>
 
-      {iosPickerState?.visible ? (
-        <Modal
-          visible
-          transparent
-          animationType="fade"
-          onRequestClose={closeIosPicker}
-        >
-          <View style={styles.dateModalBackdrop}>
-            <Pressable style={styles.dateModalDismissArea} onPress={closeIosPicker} />
-            <View style={iosPickerContainerStyle}>
-              <DateTimePicker
-                value={iosTempDate}
-                mode={iosPickerState.mode}
-                onChange={(event: DateTimePickerEvent, date?: Date) => {
-                  if (event.type === 'dismissed') {
-                    return
-                  }
-                  if (date) {
-                    setIosTempDate(date)
-                  }
-                }}
-                display="spinner"
-              />
-              <View style={styles.dateModalActions}>
-                <Pressable style={styles.dateModalActionButton} onPress={closeIosPicker}>
-                  <Text style={styles.dateModalActionLabel}>Cancel</Text>
-                </Pressable>
-                <Pressable style={styles.dateModalActionButton} onPress={confirmIosPicker}>
-                  <Text style={styles.dateModalActionLabel}>Done</Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      ) : null}
     </>
   )
 }
@@ -2141,6 +2428,12 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 6,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   addButton: {
     paddingHorizontal: 14,
     paddingVertical: 6,
@@ -2165,6 +2458,22 @@ const styles = StyleSheet.create({
   cardNotes: {
     fontSize: 14,
     color: '#6B9080',
+  },
+  cardActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  cardActionButton: {
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  cardActionText: {
+    fontSize: 14,
+    color: '#2C6E49',
+    fontWeight: '600',
+  },
+  cardActionDelete: {
+    color: '#BC4749',
   },
   ownerCard: {
     backgroundColor: '#FFFFFF',
@@ -2313,13 +2622,14 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  dateModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+  dateOverlayRoot: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'flex-end',
+    zIndex: 1000,
   },
-  dateModalDismissArea: {
-    flex: 1,
+  dateOverlayBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
   },
   dateModalContainer: {
     backgroundColor: '#FFFFFF',
@@ -2327,6 +2637,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 24,
     paddingTop: 12,
+    paddingBottom: 24,
     gap: 16,
   },
   dateModalActions: {
@@ -2342,6 +2653,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#2C6E49',
     fontWeight: '600',
+  },
+  datePickerControl: {
+    width: '100%',
+    height: 220,
   },
   switchRow: {
     flexDirection: 'row',

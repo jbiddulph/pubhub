@@ -61,9 +61,9 @@ const PRICE_OPTIONS = [
 const DIET_OPTIONS = [
   { label: 'Any Diet', value: 'all' },
   { label: 'Grain Free', value: 'grain-free' },
-  { label: 'Hypoallergenic', value: 'hypoallergenic' },
-  { label: 'Weight Management', value: 'weight-management' },
-  { label: 'Sensitive Stomach', value: 'sensitive-stomach' },
+  { label: 'Premium', value: 'premium' },
+  { label: 'Best Value', value: 'best-value' },
+  { label: "Editor's Choice", value: 'editors-choice' },
 ]
 
 const SORT_OPTIONS = [
@@ -111,7 +111,7 @@ export default function FoodFinderScreen() {
       const { data, error: fetchError } = await supabase
         .from('doghealthy_dog_food_products')
         .select(
-          'id, name, brand, food_type, breed_sizes, breed_size, life_stage, price_gbp, diets, rating, description, affiliate_url, image_url',
+          'id, name, brand, food_type, breed_sizes, breed_size, life_stage, price_gbp, is_grain_free, is_premium, is_best_value, is_editors_choice, avg_rating, description, affiliate_link, image_url',
         )
 
       if (!isMounted) return
@@ -129,21 +129,19 @@ export default function FoodFinderScreen() {
             ? rawBreedSizesSource.split(/[,/]/).map((value: string) => value.trim())
             : []
           const lifeStage = (item.life_stage ?? 'adult').toString().toLowerCase()
-          const dietsRaw: string[] =
-            Array.isArray(item.diets) || item.diets === null || item.diets === undefined
-              ? (item.diets ?? [])
-              : typeof item.diets === 'string'
-              ? item.diets.split(',').map((value: string) => value.trim())
-              : []
-
-          const normalisedDiets = dietsRaw
-            .map((diet) =>
-              diet
-                .toString()
-                .toLowerCase()
-                .replace(/\s+/g, '-'),
-            )
-            .filter(Boolean)
+          const normalisedDiets: string[] = []
+          if (item.is_grain_free) {
+            normalisedDiets.push('grain-free')
+          }
+          if (item.is_premium) {
+            normalisedDiets.push('premium')
+          }
+          if (item.is_best_value) {
+            normalisedDiets.push('best-value')
+          }
+          if (item.is_editors_choice) {
+            normalisedDiets.push('editors-choice')
+          }
 
           return {
             id:
@@ -169,7 +167,7 @@ export default function FoodFinderScreen() {
               ? lifeStage
               : 'adult') as FoodProduct['lifeStage'],
             diets: normalisedDiets,
-            rating: Number(item.rating) || 0,
+            rating: Number(item.avg_rating) || 0,
             price:
               item.price_gbp === null || item.price_gbp === undefined
                 ? null
@@ -178,7 +176,7 @@ export default function FoodFinderScreen() {
                 : Number(item.price_gbp) || null,
             description: item.description ?? 'Delicious meal for happy, healthy dogs.',
             imageUrl: item.image_url ?? null,
-            affiliateUrl: item.affiliate_url ?? null,
+            affiliateUrl: item.affiliate_link ?? null,
           }
         })
         setProducts(mapped)

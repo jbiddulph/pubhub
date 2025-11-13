@@ -252,6 +252,16 @@ export default function Index() {
 
   const menuItems = useMemo(() => (session ? LOGGED_IN_MENU : LOGGED_OUT_MENU), [session])
 
+  const ownerDisplayName = useMemo(() => {
+    if (!session?.user) return null
+    const metadata = session.user.user_metadata ?? {}
+    const fullName = metadata.full_name ?? metadata.display_name ?? metadata.name
+    const combinedFromParts = [metadata.first_name, metadata.last_name].filter(Boolean).join(' ').trim()
+    const resolved = (fullName && fullName.toString().trim()) || combinedFromParts
+
+    return resolved || session.user.email || null
+  }, [session])
+
   async function handleMenuItemPress(item: MenuItem) {
     if (item.action === 'logout') {
       await supabase.auth.signOut()
@@ -330,13 +340,21 @@ export default function Index() {
               <Text style={styles.logoutLabel}>Logout</Text>
             </Pressable>
           </View>
-          <Text style={styles.sessionSubhead}>{session.user.email}</Text>
+          <Text style={styles.sessionSubhead}>{ownerDisplayName ?? 'DogHealthy member'}</Text>
         </View>
       )}
 
       {session && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>My Dogs</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>My Dogs</Text>
+            <Pressable
+              style={styles.addDogButton}
+              onPress={() => router.push('/my-dogs/new' as any)}
+            >
+              <Text style={styles.addDogLabel}>+ Add Dog</Text>
+            </Pressable>
+          </View>
           {dogsLoading && <ActivityIndicator />}
           {dogsError && <Text style={styles.errorText}>{dogsError}</Text>}
           {!dogsLoading && !dogsError && dogs.length === 0 && (
@@ -478,10 +496,29 @@ const styles = StyleSheet.create({
     elevation: 3,
     gap: 16,
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '600',
     color: '#1B4332',
+  },
+  addDogButton: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#2C6E49',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    backgroundColor: '#2C6E49',
+  },
+  addDogLabel: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   menuItem: {
     paddingVertical: 12,
