@@ -4,6 +4,7 @@ import { ReactNode, useCallback, useMemo, useState } from 'react'
 import {
   Alert,
   ActivityIndicator,
+  DateTimePickerAndroid,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,6 +17,7 @@ import {
   View,
 } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import DateTimePicker from '@react-native-community/datetimepicker'
 
 import { getPublicDogPhotoUrl } from '@/lib/storage'
 import { supabase } from '@/lib/supabase'
@@ -181,6 +183,20 @@ function toNullableNumber(input: string) {
 function toNullableString(input: string) {
   const trimmed = input.trim()
   return trimmed.length ? trimmed : null
+}
+
+function formatDateValue(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatDateTimeValue(date: Date) {
+  const datePart = formatDateValue(date)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${datePart} ${hours}:${minutes}`
 }
 
 type SectionKey = 'health' | 'vaccinations' | 'medications' | 'appointments' | 'weight'
@@ -397,6 +413,58 @@ export default function DogDetailsScreen() {
   const [showWeightModal, setShowWeightModal] = useState(false)
   const [weightForm, setWeightForm] = useState<WeightFormState>(INITIAL_WEIGHT_FORM)
   const [savingWeight, setSavingWeight] = useState(false)
+  const [editingHealthId, setEditingHealthId] = useState<string | null>(null)
+  const [editingVaccinationId, setEditingVaccinationId] = useState<string | null>(null)
+  const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null)
+  const [editingAppointmentId, setEditingAppointmentId] = useState<string | null>(null)
+  const [editingWeightId, setEditingWeightId] = useState<string | null>(null)
+  const [iosPickerState, setIosPickerState] = useState<{
+    visible: boolean
+    mode: 'date' | 'datetime'
+    date: Date
+    onConfirm: (value: string) => void
+  } | null>(null)
+  const [iosTempDate, setIosTempDate] = useState<Date>(new Date())
+
+  const openDatePicker = useCallback(
+    (currentValue: string | null, mode: 'date' | 'datetime', onConfirm: (value: string) => void) => {
+      const initialDate = currentValue ? new Date(currentValue) : new Date()
+      if (Platform.OS === 'android') {
+        DateTimePickerAndroid.open({
+          value: initialDate,
+          mode: 'date',
+          onChange: (event, selectedDate) => {
+            if (event.type !== 'set' || !selectedDate) return
+            const pickedDate = selectedDate
+            if (mode === 'datetime') {
+              DateTimePickerAndroid.open({
+                value: pickedDate,
+                mode: 'time',
+                onChange: (eventTime, selectedTime) => {
+                  if (eventTime.type !== 'set' || !selectedTime) return
+                  const combined = new Date(pickedDate)
+                  combined.setHours(selectedTime.getHours())
+                  combined.setMinutes(selectedTime.getMinutes())
+                  onConfirm(formatDateTimeValue(combined))
+                },
+              })
+            } else {
+              onConfirm(formatDateValue(pickedDate))
+            }
+          },
+        })
+      } else {
+        setIosTempDate(initialDate)
+        setIosPickerState({
+          visible: true,
+          mode,
+          date: initialDate,
+          onConfirm,
+        })
+      }
+    },
+    [],
+  )
 
   const vetLookup = useMemo(() => {
     return vets.reduce<Record<string, Vet>>((acc, vet) => {
@@ -584,6 +652,7 @@ export default function DogDetailsScreen() {
       return
     }
     const defaultVet = vets[0] ?? null
+    setEditingHealthId(null)
     setHealthForm({
       ...INITIAL_HEALTH_FORM,
       vet_id: defaultVet?.id ?? null,
@@ -595,6 +664,7 @@ export default function DogDetailsScreen() {
 
   function closeHealthModal() {
     setShowHealthModal(false)
+    setEditingHealthId(null)
   }
 
   function openVaccinationModal() {
@@ -602,6 +672,7 @@ export default function DogDetailsScreen() {
       return
     }
     const defaultVet = vets[0] ?? null
+    setEditingVaccinationId(null)
     setVaccinationForm({
       ...INITIAL_VACCINATION_FORM,
       vet_id: defaultVet?.id ?? null,
@@ -613,6 +684,7 @@ export default function DogDetailsScreen() {
 
   function closeVaccinationModal() {
     setShowVaccinationModal(false)
+    setEditingVaccinationId(null)
   }
 
   function openMedicationModal() {
@@ -620,6 +692,7 @@ export default function DogDetailsScreen() {
       return
     }
     const defaultVet = vets[0] ?? null
+    setEditingMedicationId(null)
     setMedicationForm({
       ...INITIAL_MEDICATION_FORM,
       vet_id: defaultVet?.id ?? null,
@@ -630,6 +703,7 @@ export default function DogDetailsScreen() {
 
   function closeMedicationModal() {
     setShowMedicationModal(false)
+    setEditingMedicationId(null)
   }
 
   function openAppointmentModal() {
@@ -637,6 +711,7 @@ export default function DogDetailsScreen() {
       return
     }
     const defaultVet = vets[0] ?? null
+    setEditingAppointmentId(null)
     setAppointmentForm({
       ...INITIAL_APPOINTMENT_FORM,
       vet_id: defaultVet?.id ?? null,
@@ -649,6 +724,7 @@ export default function DogDetailsScreen() {
 
   function closeAppointmentModal() {
     setShowAppointmentModal(false)
+    setEditingAppointmentId(null)
   }
 
   function openWeightModal() {
@@ -656,6 +732,7 @@ export default function DogDetailsScreen() {
       return
     }
     const defaultVet = vets[0] ?? null
+    setEditingWeightId(null)
     setWeightForm({
       ...INITIAL_WEIGHT_FORM,
       vet_id: defaultVet?.id ?? null,
@@ -665,6 +742,7 @@ export default function DogDetailsScreen() {
 
   function closeWeightModal() {
     setShowWeightModal(false)
+    setEditingWeightId(null)
   }
 
   async function handleSubmitHealth() {
