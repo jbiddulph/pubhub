@@ -680,8 +680,19 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingHealth(true)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setSavingHealth(false)
+        Alert.alert('Add health record', 'Please sign in again to continue.')
+        return
+      }
+      const userId = dog?.user_id ?? session.user.id
       const { error: insertError } = await supabase.from('doghealthy_health_records').insert({
         dog_id: id,
+        user_id: userId,
         record_date: toNullableString(healthForm.record_date),
         record_type: toNullableString(healthForm.record_type),
         title: toNullableString(healthForm.title),
@@ -726,8 +737,19 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingVaccination(true)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setSavingVaccination(false)
+        Alert.alert('Add vaccination', 'Please sign in again to continue.')
+        return
+      }
+      const userId = dog?.user_id ?? session.user.id
       const { error: insertError } = await supabase.from('doghealthy_vaccinations').insert({
         dog_id: id,
+        user_id: userId,
         vaccine_name: toNullableString(vaccinationForm.vaccine_name),
         vaccine_type: toNullableString(vaccinationForm.vaccine_type),
         vaccination_date: toNullableString(vaccinationForm.vaccination_date),
@@ -770,8 +792,19 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingMedication(true)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setSavingMedication(false)
+        Alert.alert('Add medication', 'Please sign in again to continue.')
+        return
+      }
+      const userId = dog?.user_id ?? session.user.id
       const { error: insertError } = await supabase.from('doghealthy_medications').insert({
         dog_id: id,
+        user_id: userId,
         medication_name: toNullableString(medicationForm.medication_name),
         dosage: toNullableString(medicationForm.dosage),
         frequency: toNullableString(medicationForm.frequency),
@@ -817,8 +850,19 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingAppointment(true)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setSavingAppointment(false)
+        Alert.alert('Add appointment', 'Please sign in again to continue.')
+        return
+      }
+      const userId = dog?.user_id ?? session.user.id
       const { error: insertError } = await supabase.from('doghealthy_appointments').insert({
         dog_id: id,
+        user_id: userId,
         appointment_date: toNullableString(appointmentForm.appointment_date),
         appointment_type: toNullableString(appointmentForm.appointment_type),
         title: toNullableString(appointmentForm.title),
@@ -864,8 +908,19 @@ export default function DogDetailsScreen() {
 
     try {
       setSavingWeight(true)
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+
+      if (!session) {
+        setSavingWeight(false)
+        Alert.alert('Add weight entry', 'Please sign in again to continue.')
+        return
+      }
+      const userId = dog?.user_id ?? session.user.id
       const { error: insertError } = await supabase.from('doghealthy_weight_logs').insert({
         dog_id: id,
+        user_id: userId,
         measurement_date: toNullableString(weightForm.measurement_date),
         weight_kg: weightValue,
         notes: toNullableString(weightForm.notes),
