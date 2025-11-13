@@ -1,10 +1,13 @@
+import DateTimePicker, {
+  DateTimePickerAndroid,
+  type DateTimePickerEvent,
+} from '@react-native-community/datetimepicker'
 import { Image } from 'expo-image'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { ReactNode, useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  DateTimePickerAndroid,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -198,6 +201,27 @@ function formatDateTimeValue(date: Date) {
   return `${datePart} ${hours}:${minutes}`
 }
 
+function parseDateInput(value: string | null | undefined, mode: 'date' | 'datetime') {
+  if (!value) return new Date()
+  const trimmed = value.trim()
+  if (!trimmed) return new Date()
+  const [datePart, timePart] = trimmed.split(/[T ]/)
+  const [yearStr, monthStr, dayStr] = (datePart ?? '').split('-')
+  const year = Number(yearStr)
+  const month = Number(monthStr)
+  const day = Number(dayStr)
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return new Date()
+  }
+  if (mode === 'datetime' && timePart) {
+    const [hourStr, minuteStr] = timePart.split(':')
+    const hours = Number(hourStr)
+    const minutes = Number(minuteStr)
+    return new Date(year, (month || 1) - 1, day || 1, Number.isFinite(hours) ? hours : 0, Number.isFinite(minutes) ? minutes : 0)
+  }
+  return new Date(year, (month || 1) - 1, day || 1)
+}
+
 type SectionKey = 'health' | 'vaccinations' | 'medications' | 'appointments' | 'weight'
 
 type HealthFormState = {
@@ -326,6 +350,7 @@ const INITIAL_WEIGHT_FORM: WeightFormState = {
 
 type SectionAccordionProps = {
   title: string
+  count?: number
   expanded: boolean
   onToggle: () => void
   onAdd: () => void
@@ -337,6 +362,7 @@ type SectionAccordionProps = {
 
 function SectionAccordion({
   title,
+  count,
   expanded,
   onToggle,
   onAdd,
@@ -349,7 +375,10 @@ function SectionAccordion({
     <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <Pressable style={styles.sectionHeaderMain} onPress={onToggle}>
-          <Text style={styles.sectionTitle}>{title}</Text>
+          <Text style={styles.sectionTitle}>
+            {title}
+            {typeof count === 'number' ? ` (${count})` : ''}
+          </Text>
           <Text style={styles.sectionChevron}>{expanded ? '−' : '+'}</Text>
         </Pressable>
         <Pressable style={styles.addButton} onPress={onAdd}>
@@ -427,19 +456,19 @@ export default function DogDetailsScreen() {
 
   const openDatePicker = useCallback(
     (currentValue: string | null, mode: 'date' | 'datetime', onConfirm: (value: string) => void) => {
-      const initialDate = currentValue ? new Date(currentValue) : new Date()
+      const initialDate = parseDateInput(currentValue, mode)
       if (Platform.OS === 'android') {
         DateTimePickerAndroid.open({
           value: initialDate,
           mode: 'date',
-          onChange: (event, selectedDate) => {
+          onChange: (event: DateTimePickerEvent, selectedDate?: Date) => {
             if (event.type !== 'set' || !selectedDate) return
             const pickedDate = selectedDate
             if (mode === 'datetime') {
               DateTimePickerAndroid.open({
                 value: pickedDate,
                 mode: 'time',
-                onChange: (eventTime, selectedTime) => {
+                onChange: (eventTime: DateTimePickerEvent, selectedTime?: Date) => {
                   if (eventTime.type !== 'set' || !selectedTime) return
                   const combined = new Date(pickedDate)
                   combined.setHours(selectedTime.getHours())
@@ -465,6 +494,115 @@ export default function DogDetailsScreen() {
     [],
   )
 
+  const closeIosPicker = useCallback(() => {
+    setIosPickerState(null)
+  }, [])
+
+  const confirmIosPicker = useCallback(() => {
+    if (!iosPickerState) return
+    const formatted =
+      iosPickerState.mode === 'datetime'
+        ? formatDateTimeValue(iosTempDate)
+        : formatDateValue(iosTempDate)
+    iosPickerState.onConfirm(formatted)
+    setIosPickerState(null)
+  }, [iosPickerState, iosTempDate])
+
+  function beginEditHealth(record: HealthRecord) {
+    setEditingHealthId(record.id)
+    setHealthForm({
+      record_date: record.record_date ?? '',
+      record_type: record.record_type ?? '',
+      title: record.title ?? '',
+      description: record.description ?? '',
+      diagnosis: record.diagnosis ?? '',
+      treatment: record.treatment ?? '',
+      veterinarian_name: record.veterinarian_name ?? '',
+      clinic_name: record.clinic_name ?? '',
+      cost: record.cost !== null && record.cost !== undefined ? String(record.cost) : '',
+      notes: record.notes ?? '',
+      vet_id: record.vet_id ?? null,
+    })
+    setShowHealthModal(true)
+  }
+
+  function beginEditVaccination(record: Vaccination) {
+    setEditingVaccinationId(record.id)
+    setVaccinationForm({
+      vaccine_name: record.vaccine_name ?? '',
+      vaccine_type: record.vaccine_type ?? '',
+      vaccination_date: record.vaccination_date ?? '',
+      next_due_date: record.next_due_date ?? '',
+      veterinarian_name: record.veterinarian_name ?? '',
+      clinic_name: record.clinic_name ?? '',
+      cost: record.cost !== null && record.cost !== undefined ? String(record.cost) : '',
+      notes: record.notes ?? '',
+      vet_id: record.vet_id ?? null,
+    })
+    setShowVaccinationModal(true)
+  }
+
+  function beginEditMedication(record: Medication) {
+    setEditingMedicationId(record.id)
+    setMedicationForm({
+      medication_name: record.medication_name ?? '',
+      dosage: record.dosage ?? '',
+      frequency: record.frequency ?? '',
+      start_date: record.start_date ?? '',
+      end_date: record.end_date ?? '',
+      prescribed_by: record.prescribed_by ?? '',
+      purpose: record.purpose ?? '',
+      side_effects: record.side_effects ?? '',
+      instructions: record.instructions ?? '',
+      notes: record.notes ?? '',
+      is_active: record.is_active ?? true,
+      vet_id: record.vet_id ?? null,
+    })
+    setShowMedicationModal(true)
+  }
+
+  function beginEditAppointment(record: Appointment) {
+    setEditingAppointmentId(record.id)
+    setAppointmentForm({
+      appointment_date: record.appointment_date ?? '',
+      appointment_type: record.appointment_type ?? '',
+      title: record.title ?? '',
+      description: record.description ?? '',
+      location: record.location ?? '',
+      veterinarian_name: record.veterinarian_name ?? '',
+      clinic_name: record.clinic_name ?? '',
+      clinic_phone: record.clinic_phone ?? '',
+      status: record.status ?? '',
+      notes: record.notes ?? '',
+      vet_id: record.vet_id ?? null,
+    })
+    setShowAppointmentModal(true)
+  }
+
+  function beginEditWeight(record: WeightLog) {
+    setEditingWeightId(record.id)
+    setWeightForm({
+      measurement_date: record.measurement_date ?? '',
+      weight_kg: record.weight_kg?.toString() ?? '',
+      notes: record.notes ?? '',
+      vet_id: record.vet_id ?? null,
+    })
+    setShowWeightModal(true)
+  }
+
+  async function deleteRecord(table: string, recordId: string, successMessage: string, reopen?: SectionKey) {
+    const { error } = await supabase.from(table).delete().eq('id', recordId)
+    if (error) {
+      Alert.alert('Delete failed', error.message)
+      return
+    }
+    await fetchData()
+    if (reopen) {
+      setExpandedSection(reopen)
+    }
+    Alert.alert(successMessage)
+  }
+
   const vetLookup = useMemo(() => {
     return vets.reduce<Record<string, Vet>>((acc, vet) => {
       if (vet.id) {
@@ -480,6 +618,10 @@ export default function DogDetailsScreen() {
   const modalHeaderStyle = useMemo(
     () => [styles.modalHeader, { paddingTop: insets.top + 12 }],
     [insets.top],
+  )
+  const iosPickerContainerStyle = useMemo(
+    () => [styles.dateModalContainer, { paddingBottom: insets.bottom + 16 }],
+    [insets.bottom],
   )
   function toggleSection(key: SectionKey) {
     setExpandedSection((current) => (current === key ? null : key))
@@ -1002,7 +1144,9 @@ export default function DogDetailsScreen() {
         notes: toNullableString(weightForm.notes),
         vet_id: weightForm.vet_id,
       }
-      if ('user_id' in (supabase as any).schema?.public?.tables?.doghealthy_weight_logs?.columns ?? {}) {
+      const weightLogsColumns =
+        (supabase as any)?.schema?.public?.tables?.doghealthy_weight_logs?.columns
+      if (weightLogsColumns && 'user_id' in weightLogsColumns) {
         insertPayload.user_id = userId
       }
 
@@ -1354,12 +1498,22 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setHealthForm((prev) => ({ ...prev, record_type: text }))}
               placeholder="Record type"
             />
-            <TextInput
-              style={styles.modalInput}
-              value={healthForm.record_date}
-              onChangeText={(text) => setHealthForm((prev) => ({ ...prev, record_date: text }))}
-              placeholder="Record date (YYYY-MM-DD)"
-            />
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(healthForm.record_date || null, 'date', (selected) =>
+                  setHealthForm((prev) => ({ ...prev, record_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  healthForm.record_date ? styles.modalDateText : styles.modalDatePlaceholder
+                }
+              >
+                {healthForm.record_date || 'Record date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
             <TextInput
               style={styles.modalInput}
               value={healthForm.veterinarian_name}
@@ -1460,18 +1614,42 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setVaccinationForm((prev) => ({ ...prev, vaccine_type: text }))}
               placeholder="Vaccine type"
             />
-            <TextInput
-              style={styles.modalInput}
-              value={vaccinationForm.vaccination_date}
-              onChangeText={(text) => setVaccinationForm((prev) => ({ ...prev, vaccination_date: text }))}
-              placeholder="Vaccination date (YYYY-MM-DD)"
-            />
-            <TextInput
-              style={styles.modalInput}
-              value={vaccinationForm.next_due_date}
-              onChangeText={(text) => setVaccinationForm((prev) => ({ ...prev, next_due_date: text }))}
-              placeholder="Next due date (YYYY-MM-DD)"
-            />
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(vaccinationForm.vaccination_date || null, 'date', (selected) =>
+                  setVaccinationForm((prev) => ({ ...prev, vaccination_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  vaccinationForm.vaccination_date
+                    ? styles.modalDateText
+                    : styles.modalDatePlaceholder
+                }
+              >
+                {vaccinationForm.vaccination_date || 'Vaccination date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(vaccinationForm.next_due_date || null, 'date', (selected) =>
+                  setVaccinationForm((prev) => ({ ...prev, next_due_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  vaccinationForm.next_due_date
+                    ? styles.modalDateText
+                    : styles.modalDatePlaceholder
+                }
+              >
+                {vaccinationForm.next_due_date || 'Next due date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
             <TextInput
               style={styles.modalInput}
               value={vaccinationForm.veterinarian_name}
@@ -1557,18 +1735,38 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setMedicationForm((prev) => ({ ...prev, frequency: text }))}
               placeholder="Frequency"
             />
-            <TextInput
-              style={styles.modalInput}
-              value={medicationForm.start_date}
-              onChangeText={(text) => setMedicationForm((prev) => ({ ...prev, start_date: text }))}
-              placeholder="Start date (YYYY-MM-DD)"
-            />
-            <TextInput
-              style={styles.modalInput}
-              value={medicationForm.end_date}
-              onChangeText={(text) => setMedicationForm((prev) => ({ ...prev, end_date: text }))}
-              placeholder="End date (YYYY-MM-DD)"
-            />
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(medicationForm.start_date || null, 'date', (selected) =>
+                  setMedicationForm((prev) => ({ ...prev, start_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  medicationForm.start_date ? styles.modalDateText : styles.modalDatePlaceholder
+                }
+              >
+                {medicationForm.start_date || 'Start date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(medicationForm.end_date || null, 'date', (selected) =>
+                  setMedicationForm((prev) => ({ ...prev, end_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  medicationForm.end_date ? styles.modalDateText : styles.modalDatePlaceholder
+                }
+              >
+                {medicationForm.end_date || 'End date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
             <TextInput
               style={styles.modalInput}
               value={medicationForm.prescribed_by}
@@ -1665,12 +1863,24 @@ export default function DogDetailsScreen() {
               onChangeText={(text) => setAppointmentForm((prev) => ({ ...prev, appointment_type: text }))}
               placeholder="Appointment type"
             />
-            <TextInput
-              style={styles.modalInput}
-              value={appointmentForm.appointment_date}
-              onChangeText={(text) => setAppointmentForm((prev) => ({ ...prev, appointment_date: text }))}
-              placeholder="Appointment date & time"
-            />
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(appointmentForm.appointment_date || null, 'datetime', (selected) =>
+                  setAppointmentForm((prev) => ({ ...prev, appointment_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  appointmentForm.appointment_date
+                    ? styles.modalDateText
+                    : styles.modalDatePlaceholder
+                }
+              >
+                {appointmentForm.appointment_date || 'Appointment date & time'}
+              </Text>
+            </Pressable>
             <TextInput
               style={styles.modalInput}
               value={appointmentForm.location}
@@ -1764,12 +1974,24 @@ export default function DogDetailsScreen() {
               placeholder="Weight (kg)"
               keyboardType="decimal-pad"
             />
-            <TextInput
-              style={styles.modalInput}
-              value={weightForm.measurement_date}
-              onChangeText={(text) => setWeightForm((prev) => ({ ...prev, measurement_date: text }))}
-              placeholder="Measurement date (YYYY-MM-DD)"
-            />
+            <Pressable
+              style={styles.modalDateButton}
+              onPress={() =>
+                openDatePicker(weightForm.measurement_date || null, 'date', (selected) =>
+                  setWeightForm((prev) => ({ ...prev, measurement_date: selected })),
+                )
+              }
+            >
+              <Text
+                style={
+                  weightForm.measurement_date
+                    ? styles.modalDateText
+                    : styles.modalDatePlaceholder
+                }
+              >
+                {weightForm.measurement_date || 'Measurement date (YYYY-MM-DD)'}
+              </Text>
+            </Pressable>
             <TextInput
               style={[styles.modalInput, styles.modalMultiline]}
               value={weightForm.notes}
@@ -1793,6 +2015,41 @@ export default function DogDetailsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {iosPickerState?.visible ? (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={closeIosPicker}
+        >
+          <View style={styles.dateModalBackdrop}>
+            <Pressable style={styles.dateModalDismissArea} onPress={closeIosPicker} />
+            <View style={iosPickerContainerStyle}>
+              <DateTimePicker
+                value={iosTempDate}
+                mode={iosPickerState.mode}
+                onChange={(event: DateTimePickerEvent, date?: Date) => {
+                  if (event.type === 'dismissed') {
+                    return
+                  }
+                  if (date) {
+                    setIosTempDate(date)
+                  }
+                }}
+                display="spinner"
+              />
+              <View style={styles.dateModalActions}>
+                <Pressable style={styles.dateModalActionButton} onPress={closeIosPicker}>
+                  <Text style={styles.dateModalActionLabel}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.dateModalActionButton} onPress={confirmIosPicker}>
+                  <Text style={styles.dateModalActionLabel}>Done</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </>
   )
 }
@@ -1984,6 +2241,23 @@ const styles = StyleSheet.create({
     color: '#2C6E49',
     fontWeight: '600',
   },
+  modalDateButton: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#CCE3DE',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  modalDateText: {
+    fontSize: 16,
+    color: '#1B4332',
+    fontWeight: '500',
+  },
+  modalDatePlaceholder: {
+    fontSize: 16,
+    color: '#6B9080',
+  },
   selector: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -2035,6 +2309,39 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     fontSize: 15,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  dateModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  dateModalDismissArea: {
+    flex: 1,
+  },
+  dateModalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    gap: 16,
+  },
+  dateModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 16,
+  },
+  dateModalActionButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  dateModalActionLabel: {
+    fontSize: 16,
+    color: '#2C6E49',
+    fontWeight: '600',
   },
   switchRow: {
     flexDirection: 'row',
