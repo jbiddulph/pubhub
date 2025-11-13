@@ -84,7 +84,12 @@ export default function MyDogsScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>My Dogs</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>My Dogs</Text>
+        <Pressable style={styles.addChip} onPress={() => router.push('/my-dogs/new' as any)}>
+          <Text style={styles.addChipLabel}>+ Add Dog</Text>
+        </Pressable>
+      </View>
       <Text style={styles.subtitle}>Manage your DogHealthy companions in one place.</Text>
 
       {loading && <ActivityIndicator />}
@@ -138,10 +143,26 @@ const styles = StyleSheet.create({
     gap: 16,
     backgroundColor: '#F7FBFF',
   },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   title: {
     fontSize: 32,
     fontWeight: '700',
     color: '#1B4332',
+  },
+  addChip: {
+    backgroundColor: '#BC4749',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  addChipLabel: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 14,
   },
   subtitle: {
     fontSize: 16,
